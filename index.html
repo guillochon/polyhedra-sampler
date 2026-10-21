@@ -621,7 +621,7 @@ function buildScene() {
 // Every polyhedron spins slowly about the vertical (at half speed when the system asks for reduced motion). The one
 // under the pointer stops spinning and turns its front towards the pointer (eased), then eases back and resumes.
 const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-const SPIN = 0.25, YAW = 0.9, PITCH = 0.7, EASE = 7;   // rad/s, max turn towards the pointer (rad), 1/s
+const SPIN = 0.25, YAW = Math.PI / 2, PITCH = Math.PI / 2, EASE = 7;   // rad/s, max turn towards the pointer (rad), 1/s
 let hover = null, hx = 0, hy = 0;
 rowsEl.addEventListener("pointermove", e => {
   const P = pick(e);
