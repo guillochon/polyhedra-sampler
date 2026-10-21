@@ -44,6 +44,7 @@ header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16p
 h1 { font-family: var(--font-display); font-weight: 600; font-size: 36px; line-height: 1.05; margin: 0 0 10px; text-wrap: balance; }
 .lede { margin: 0; max-width: 68ch; color: var(--muted); }
 .lede b { color: var(--fg); font-weight: 500; }
+.lede a { color: var(--accent); }
 .seq { font-family: var(--font-mono); font-size: 13px; color: var(--fg); }
 
 .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; }
@@ -70,6 +71,8 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .row-head h2 { font-family: var(--font-display); font-weight: 500; font-size: 22px; margin: 0; }
 .row-head h2 i { font-style: italic; }
 .row-head .count { font-family: var(--font-mono); font-size: 13px; }
+.row-head .new { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); text-decoration: none; }
+.row-head .new:hover { text-decoration: underline; }
 .row-head .span { font-size: 12px; color: var(--muted); margin-left: auto; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 10px; }
 
@@ -108,13 +111,14 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
       <h1>Polyhedra Sampler</h1>
       <p class="lede">A polyhedron's skeleton is a 3-connected planar graph (Steinitz), so A000944 counts them:
         <span class="seq">1, 2, 7, 34, 257, 2606, 32300, …</span> for n = 4, 5, 6, …
+        (the OEIS lists n ≤ 18; the counts for n = 19 and 20 here are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).
         Each row below is a random sample of <b>distinct</b> polyhedra with n vertices, drawn in canonical form
         (every edge tangent to the unit sphere, so symmetric graphs look symmetric). Hover or tap one to mark its
         relatives in the sample.</p>
     </div>
     <div class="controls">
       <label for="nmax">Up to n =
-        <select id="nmax"><option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>13</option></select></label>
+        <select id="nmax"><option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option></select></label>
       <label for="per">Per row
         <select id="per"><option>6</option><option selected>8</option><option>12</option><option>16</option></select></label>
       <button type="button" id="regen">New sample</button>
@@ -142,7 +146,11 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 // seen from outside). For a 3-connected planar graph this embedding is unique up to mirror image (Whitney), so it
 // carries no extra information but makes faces, duals and canonical forms easy.
 // ---------------------------------------------------------------------------------------------------------------
-const COUNTS = [0, 0, 0, 0, 1, 2, 7, 34, 257, 2606, 32300, 440564, 6384634, 96262938];
+// A000944(n) as exact decimal strings (past 2^53 from n = 20). The OEIS entry has n <= 18 (exhaustive generation);
+// n = 19, 20 are this project's formula counts (github.com/guillochon/oeis-results/tree/main/A000944).
+const COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "32300", "440564", "6384634", "96262938",
+  "1496225352", "23833988129", "387591510244", "6415851530241", "107854282197058", "1837856160118250", "31696106245572086"];
+const COUNTS = COUNT_TEXT.map(Number), OEIS_MAX = 18;
 const PAL = ["", "", "", "#2f6fdf", "#16a072", "#e3ab0b", "#ec6a1c", "#d3345a", "#8a47b8"];
 const palIdx = k => Math.min(k, 8);
 
@@ -314,7 +322,6 @@ function newell(pts) {
   const l = Math.hypot(nx, ny, nz) || 1; return [nx / l, ny / l, nz / l];
 }
 const centroid = pts => { const c = [0, 0, 0]; for (const p of pts) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; } return c.map(t => t / pts.length); };
-const det3 = m => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
 
 // Moebius map of the sphere sending the point a (inside the ball) to the centre.
 function mobius(x, a) { const d = sub(x, a), dd = dot(d, d), aa = dot(a, a); return [0, 1, 2].map(j => ((1 - aa) * d[j] - dd * a[j]) / dd); }
@@ -346,7 +353,7 @@ function koebe(rot, F, dartFace) {
       const d = u - u0; x[i] = Math.exp(u0 + 1.6 * d);   // over-relaxed
       if (Math.abs(d) > change) change = Math.abs(d);
     }
-    if (change < 1e-9) break;
+    if (change < 1e-6) break;   // relative radius change; far below what shows on screen
   }
   const rv = x.subarray(0, n), rf = x.subarray(n);
 
@@ -386,12 +393,13 @@ function koebe(rot, F, dartFace) {
   }
   const touch = new Map(keys.map((k, i) => [k, P[i]]));
 
-  // Vertex v satisfies v . t = 1 for the touching point t of each of its edges (least squares, Cramer's rule).
+  // The touching points of a vertex's edges lie on its circle; the vertex is the pole of that circle's plane
+  // n . x = d, i.e. n / d. The plane is fitted on coordinates centred on the points (they are in cyclic order), which
+  // stays accurate for a tiny circle (a nearly flat corner), where solving v . t = 1 directly is ill-conditioned.
   return rot.map((r, u) => {
-    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bv = [0, 0, 0];
-    for (const w of r) { const t = touch.get(u < w ? KEY(u, w) : KEY(w, u)); for (let i = 0; i < 3; i++) { bv[i] += t[i]; for (let j = 0; j < 3; j++) A[i][j] += t[i] * t[j]; } }
-    const D = det3(A);
-    return [0, 1, 2].map(i => det3(A.map((row, ri) => row.map((val, ci) => ci === i ? bv[ri] : val))) / D);
+    const pts = r.map(w => touch.get(u < w ? KEY(u, w) : KEY(w, u))), m = centroid(pts);
+    const nrm = newell(pts.map(p => sub(p, m))), d = dot(nrm, m);
+    return nrm.map(t => t / d);
   });
 }
 
@@ -442,7 +450,6 @@ function generate() {
 // ---------------------------------------------------------------------------------------------------------------
 // DOM
 // ---------------------------------------------------------------------------------------------------------------
-const fmt = n => n.toLocaleString("en-US");
 const sw = k => `<i class="sw" style="background:${PAL[palIdx(k)]}"></i>`;
 
 document.getElementById("legend").innerHTML = [3, 4, 5, 6, 7, 8].map(k =>
@@ -456,7 +463,9 @@ function renderRows() {
     const all = polys.length === COUNTS[n];
     return `<section class="row" aria-label="Polyhedra with ${n} vertices">
       <div class="row-head"><h2><i>n</i> = ${n}</h2>
-        <span class="count">${fmt(COUNTS[n])} ${COUNTS[n] === 1 ? "polyhedron" : "polyhedra"}</span>
+        <span class="count">${BigInt(COUNT_TEXT[n]).toLocaleString("en-US")} ${COUNTS[n] === 1 ? "polyhedron" : "polyhedra"}</span>
+        ${n > OEIS_MAX ? `<a class="new" href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener"
+          title="Beyond the OEIS entry, which ends at n = 18: counted by formula in this project">new count</a>` : ""}
         <span class="span">${all ? `all ${polys.length} shown` : `${polys.length} sampled`} · ${n === 4 ? "6 edges" :
           `by edge count, ${Math.ceil(3 * n / 2)} to ${3 * n - 6} (all faces triangles)`}</span></div>
       <div class="cards">${polys.map(P => {
