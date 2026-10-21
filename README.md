@@ -4,7 +4,9 @@
 
 [A000944](https://oeis.org/A000944) counts polyhedra by number of vertices: 1, 2, 7, 34, 257, 2606, 32300, … for
 n = 4, 5, 6, … By Steinitz's theorem these are the 3-connected planar graphs, up to isomorphism. The page draws a
-random sample of distinct polyhedra for each n, in WebGL, and regenerates a new sample in well under a second.
+random sample of distinct polyhedra for every n from 4 to 30, in WebGL, and regenerates a new sample in a few hundred
+milliseconds. The OEIS lists the counts up to n = 18; those for n = 19 to 30 are new, computed by formula in
+[oeis-results/A000944](https://github.com/guillochon/oeis-results/tree/main/A000944).
 
 - **Colours.** One scale for both: faces by number of sides, corners by degree, each half of an edge by the corner it
   leaves. Duality swaps faces and corners, so a polyhedron and its dual trade colours.
@@ -24,8 +26,8 @@ Everything runs in the browser, in one file (`index.html`).
   for n = 4..7 (1, 2, 7, 34 classes).
 - **Geometry.** Each polyhedron is drawn in canonical form (Koebe–Andreev–Thurston): every edge touches the unit
   sphere and the touching points are centred on the origin, so symmetric graphs look symmetric. It is computed
-  exactly from the primal–dual circle pattern, by coordinate descent on the circle radii, then laid out in the plane,
-  mapped back to the sphere and centred by a Möbius transformation.
+  exactly from the primal–dual circle pattern (Newton's method on the circle radii, a convex problem), then laid out
+  in the plane, mapped back to the sphere and centred by a Möbius transformation.
 
 Made by James Guillochon with Claude. The source lives in the oeis-sniper project (`viz/A000944/`); this repo holds
 the published copy.

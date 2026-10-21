@@ -111,14 +111,12 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
       <h1>Polyhedra Sampler</h1>
       <p class="lede">A polyhedron's skeleton is a 3-connected planar graph (Steinitz), so A000944 counts them:
         <span class="seq">1, 2, 7, 34, 257, 2606, 32300, …</span> for n = 4, 5, 6, …
-        (the OEIS lists n ≤ 18; the counts for n = 19 and 20 here are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).
+        (the OEIS lists n ≤ 18; the counts here for n = 19 to 30 are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).
         Each row below is a random sample of <b>distinct</b> polyhedra with n vertices, drawn in canonical form
         (every edge tangent to the unit sphere, so symmetric graphs look symmetric). Hover or tap one to mark its
         relatives in the sample.</p>
     </div>
     <div class="controls">
-      <label for="nmax">Up to n =
-        <select id="nmax"><option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option></select></label>
       <label for="per">Per row
         <select id="per"><option>6</option><option selected>8</option><option>12</option><option>16</option></select></label>
       <button type="button" id="regen">New sample</button>
@@ -147,10 +145,13 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 // carries no extra information but makes faces, duals and canonical forms easy.
 // ---------------------------------------------------------------------------------------------------------------
 // A000944(n) as exact decimal strings (past 2^53 from n = 20). The OEIS entry has n <= 18 (exhaustive generation);
-// n = 19, 20 are this project's formula counts (github.com/guillochon/oeis-results/tree/main/A000944).
-const COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "32300", "440564", "6384634", "96262938",
-  "1496225352", "23833988129", "387591510244", "6415851530241", "107854282197058", "1837856160118250", "31696106245572086"];
-const COUNTS = COUNT_TEXT.map(Number), OEIS_MAX = 18;
+// n >= 19 are this project's formula counts (github.com/guillochon/oeis-results/tree/main/A000944).
+const COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "32300", "440564", "6384634",
+  "96262938", "1496225352", "23833988129", "387591510244", "6415851530241", "107854282197058", "1837856160118250",
+  "31696106245572086", "552533560690636208", "9725100290645366750", "172665610387355491030",
+  "3089897351402967680382", "55693596773314728386434", "1010472821318274587081170", "18444616002584669852951766",
+  "338559437591583889391837842", "6246524274375883224870258320", "115802469478907466726560502772"];
+const COUNTS = COUNT_TEXT.map(Number), OEIS_MAX = 18, NMAX = 30;
 const PAL = ["", "", "", "#2f6fdf", "#16a072", "#e3ab0b", "#ec6a1c", "#d3345a", "#8a47b8"];
 const palIdx = k => Math.min(k, 8);
 
@@ -208,17 +209,25 @@ function dualRot(rot) {
   return F.map(f => f.map((u, i) => dartFace.get(KEY(f[(i + 1) % f.length], u))));
 }
 
-// Vertex connectivity >= 3: no pair of vertices disconnects the rest.
-function triconnected(rot) {
+// Is the graph still 3-connected after deleting edge s-t from a 3-connected graph? A 2-cut of the smaller graph would
+// have to separate s from t (the original has none), so it is 3-connected exactly when s and t are still joined by
+// three paths with no other vertex in common (Menger): three augmenting paths of a unit vertex-capacity flow.
+function stillTriconnected(rot, s, t) {
   const n = rot.length;
-  if (n < 4 || rot.some(r => r.length < 3)) return false;
-  const mark = new Int32Array(n), stack = new Int32Array(n); let stamp = 0;
-  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
-    stamp++; mark[a] = mark[b] = stamp;
-    let s = 0; while (s === a || s === b) s++;
-    mark[s] = stamp; let cnt = 1, sp = 0; stack[sp++] = s;
-    while (sp) { const x = stack[--sp]; for (const y of rot[x]) if (mark[y] !== stamp) { mark[y] = stamp; cnt++; stack[sp++] = y; } }
-    if (cnt !== n - 2) return false;
+  if (rot[s].length < 3 || rot[t].length < 3) return false;
+  const head = [], cap = [], next = [], first = new Int32Array(2 * n).fill(-1);   // vertex x: in 2x, out 2x+1
+  const arc = (a, b, c) => { head.push(b, a); cap.push(c, 0); next.push(first[a], first[b]); first[a] = head.length - 2; first[b] = head.length - 1; };
+  for (let x = 0; x < n; x++) arc(2 * x, 2 * x + 1, x === s || x === t ? 3 : 1);
+  rot.forEach((r, x) => { for (const y of r) arc(2 * x + 1, 2 * y, 1); });
+  const src = 2 * s + 1, snk = 2 * t, prev = new Int32Array(2 * n), q = new Int32Array(2 * n);
+  for (let k = 0; k < 3; k++) {
+    prev.fill(-1); prev[src] = -2; let h = 0, tl = 0; q[tl++] = src;
+    while (h < tl && prev[snk] === -1) {
+      const x = q[h++];
+      for (let e = first[x]; e >= 0; e = next[e]) if (cap[e] > 0 && prev[head[e]] === -1) { prev[head[e]] = e; q[tl++] = head[e]; }
+    }
+    if (prev[snk] === -1) return false;
+    for (let x = snk; x !== src;) { const e = prev[x]; cap[e]--; cap[e ^ 1]++; x = head[e ^ 1]; }
   }
   return true;
 }
@@ -278,7 +287,7 @@ function randomPolyhedron(n, rnd) {
     if (rot[u].length < 4 || rot[v].length < 4) continue;
     const iu = rot[u].indexOf(v), iv = rot[v].indexOf(u);
     removeEdge(rot, u, v);
-    if (triconnected(rot)) m--; else { rot[u].splice(iu, 0, v); rot[v].splice(iv, 0, u); }
+    if (stillTriconnected(rot, u, v)) m--; else { rot[u].splice(iu, 0, v); rot[v].splice(iv, 0, u); }
   }
   return rot;
 }
@@ -290,7 +299,7 @@ function deletions(rot) {
   for (const [u, v] of edgesOf(rot)) {
     if (rot[u].length < 4 || rot[v].length < 4) continue;
     const r = cloneRot(rot); removeEdge(r, u, v);
-    if (triconnected(r)) out.add(canon(r).key);
+    if (stillTriconnected(r, u, v)) out.add(canon(r).key);
   }
   return out;
 }
@@ -300,7 +309,7 @@ function relatives(P) {
   for (const [u, v] of edgesOf(D)) {
     if (D[u].length < 4 || D[v].length < 4) continue;
     const r = cloneRot(D); removeEdge(r, u, v);
-    if (triconnected(r)) con.add(canon(dualRot(r)).key);
+    if (stillTriconnected(r, u, v)) con.add(canon(dualRot(r)).key);
   }
   return (P.rel = { del: deletions(P.rot), con });
 }
@@ -323,8 +332,19 @@ function newell(pts) {
 }
 const centroid = pts => { const c = [0, 0, 0]; for (const p of pts) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; } return c.map(t => t / pts.length); };
 
-// Moebius map of the sphere sending the point a (inside the ball) to the centre.
-function mobius(x, a) { const d = sub(x, a), dd = dot(d, d), aa = dot(a, a); return [0, 1, 2].map(j => ((1 - aa) * d[j] - dd * a[j]) / dd); }
+// Solve A x = b in place for symmetric positive definite A (m x m, row-major): Cholesky, then two triangular solves.
+function cholSolve(A, b, m) {
+  for (let j = 0; j < m; j++) {
+    let s = A[j * m + j]; for (let k = 0; k < j; k++) s -= A[j * m + k] * A[j * m + k];
+    const dj = Math.sqrt(s); A[j * m + j] = dj;
+    for (let i = j + 1; i < m; i++) { let t = A[i * m + j]; for (let k = 0; k < j; k++) t -= A[i * m + k] * A[j * m + k]; A[i * m + j] = t / dj; }
+  }
+  for (let i = 0; i < m; i++) { let t = b[i]; for (let k = 0; k < i; k++) t -= A[i * m + k] * b[k]; b[i] = t / A[i * m + i]; }
+  for (let i = m - 1; i >= 0; i--) { let t = b[i]; for (let k = i + 1; k < m; k++) t -= A[k * m + i] * b[k]; b[i] = t / A[i * m + i]; }
+}
+
+// The Moebius map of the sphere sending a point a inside the ball to the centre is x -> ((1-|a|^2)(x-a) - |x-a|^2 a) / |x-a|^2.
+const CENTRE_STEP = 0.8;   // fastest of 0.5, 0.8, 1 on n = 4..30
 
 function koebe(rot, F, dartFace) {
   const n = rot.length, nf = F.length;
@@ -340,21 +360,32 @@ function koebe(rot, F, dartFace) {
   for (let v = 0; v < n; v++) { fin[v] = !infV[v]; let k = 0; for (const f of vF[v]) if (infF[f]) k++; else nb.push(n + f); tgt[v] = Math.PI - k * Math.PI / 2; st[v + 1] = nb.length; }
   for (let f = 0; f < nf; f++) { fin[n + f] = !infF[f]; let k = 0; for (const v of F[f]) if (infV[v]) k++; else nb.push(v); tgt[n + f] = Math.PI - k * Math.PI / 2; st[n + f + 1] = nb.length; }
   const NB = Int32Array.from(nb);
-  for (let sweep = 0; sweep < 3000; sweep++) {
-    let change = 0;
-    for (let i = 0; i < N; i++) {
-      if (!fin[i]) continue;
-      const u0 = Math.log(x[i]); let u = u0;
-      for (let k = 0; k < 2; k++) {   // Newton on log r
-        const e = Math.exp(-u); let g = -tgt[i], dg = 0;
-        for (let j = st[i]; j < st[i + 1]; j++) { const y = x[NB[j]] * e; g += Math.atan(y); dg -= y / (1 + y * y); }
-        const s = g / dg; u -= s > 3 ? 3 : s < -3 ? -3 : s;
-      }
-      const d = u - u0; x[i] = Math.exp(u0 + 1.6 * d);   // over-relaxed
-      if (Math.abs(d) > change) change = Math.abs(d);
+  // Newton's method in u = log r. The angle defect g_i(u) = sum_j atan(exp(u_j - u_i)) - target_i has Jacobian minus
+  // a weighted graph Laplacian (weights 1 / (2 cosh(u_j - u_i))), singular only along the overall scale, so the first
+  // finite circle keeps radius 1. The problem is convex (Bobenko-Springborn), and a few damped steps suffice.
+  const idx = []; for (let i = 0; i < N; i++) if (fin[i]) idx.push(i);
+  const M = idx.length - 1, slot = new Int32Array(N).fill(-1); for (let k = 1; k <= M; k++) slot[idx[k]] = k - 1;
+  const defect = (u, g) => { let s = 0;
+    for (const i of idx) { let gi = -tgt[i]; for (let j = st[i]; j < st[i + 1]; j++) gi += Math.atan(Math.exp(u[NB[j]] - u[i])); g[i] = gi; s += gi * gi; }
+    return s; };
+  let u = new Float64Array(N), g = new Float64Array(N), res = defect(u, g);
+  let u2 = new Float64Array(N), g2 = new Float64Array(N);
+  const A = new Float64Array(M * M), d = new Float64Array(M);
+  for (let it = 0; it < 50 && res > 1e-22; it++) {
+    A.fill(0);
+    for (const i of idx) {
+      const p = slot[i]; if (p < 0) continue;
+      d[p] = g[i];
+      for (let j = st[i]; j < st[i + 1]; j++) { const k = NB[j], w = 0.5 / Math.cosh(u[k] - u[i]); A[p * M + p] += w; if (slot[k] >= 0) A[p * M + slot[k]] -= w; }
     }
-    if (change < 1e-6) break;   // relative radius change; far below what shows on screen
+    cholSolve(A, d, M);
+    for (let t = 1; t > 1e-6; t /= 2) {   // step (halved until the defect drops)
+      u2.set(u); for (let k = 1; k <= M; k++) u2[idx[k]] += t * d[k - 1];
+      const r2 = defect(u2, g2);
+      if (r2 < res) { [u, u2] = [u2, u]; [g, g2] = [g2, g]; res = r2; break; }
+    }
   }
+  for (let i = 0; i < N; i++) x[i] = Math.exp(u[i]);
   const rv = x.subarray(0, n), rf = x.subarray(n);
 
   // Lay out the vertex circles in the plane (breadth-first; a vertex's edges leave at angles set by its kites) and
@@ -386,12 +417,22 @@ function koebe(rot, F, dartFace) {
   let P = keys.map(k => { const [x0, y0] = T.get(k), px = x0 * sc, py = y0 * sc, r2 = px * px + py * py;
     return [2 * px / (1 + r2), 2 * py / (1 + r2), (r2 - 1) / (1 + r2)]; });
   keys.push(a < b ? KEY(a, b) : KEY(b, a)); P.push([0, 0, 1]);
+  // Each step applies the Moebius map that sends a fraction of the centroid to the origin (in place, flat array).
+  const m = P.length, Q = new Float64Array(3 * m);
+  P.forEach((p, i) => Q.set(p, 3 * i));
   for (let it = 0; it < 300; it++) {
-    const c = centroid(P); if (Math.hypot(...c) < 1e-12) break;
-    const m = c.map(t => t * 0.5);
-    P = P.map(p => { const y = mobius(p, m), l = Math.hypot(...y); return y.map(t => t / l); });
+    let cx = 0, cy = 0, cz = 0;
+    for (let i = 0; i < 3 * m; i += 3) { cx += Q[i]; cy += Q[i + 1]; cz += Q[i + 2]; }
+    cx /= m; cy /= m; cz /= m;
+    if (Math.hypot(cx, cy, cz) < 1e-9) break;
+    const ax = CENTRE_STEP * cx, ay = CENTRE_STEP * cy, az = CENTRE_STEP * cz, aa = ax * ax + ay * ay + az * az;
+    for (let i = 0; i < 3 * m; i += 3) {
+      const dx = Q[i] - ax, dy = Q[i + 1] - ay, dz = Q[i + 2] - az, dd = dx * dx + dy * dy + dz * dz;
+      const yx = ((1 - aa) * dx - dd * ax) / dd, yy = ((1 - aa) * dy - dd * ay) / dd, yz = ((1 - aa) * dz - dd * az) / dd, l = Math.hypot(yx, yy, yz);
+      Q[i] = yx / l; Q[i + 1] = yy / l; Q[i + 2] = yz / l;
+    }
   }
-  const touch = new Map(keys.map((k, i) => [k, P[i]]));
+  const touch = new Map(keys.map((k, i) => [k, [Q[3 * i], Q[3 * i + 1], Q[3 * i + 2]]]));
 
   // The touching points of a vertex's edges lie on its circle; the vertex is the pole of that circle's plane
   // n . x = d, i.e. n / d. The plane is fitted on coordinates centred on the points (they are in cyclic order), which
@@ -435,11 +476,11 @@ function sampleRow(n, per, rnd) {
 }
 
 function generate() {
-  const nmax = +document.getElementById("nmax").value, per = +document.getElementById("per").value;
+  const per = +document.getElementById("per").value;
   const rnd = mulberry32((Math.random() * 2 ** 32) >>> 0);
   const t0 = performance.now();
   SAMPLE = [];
-  for (let n = 4; n <= nmax; n++) SAMPLE.push({ n, polys: sampleRow(n, per, rnd) });
+  for (let n = 4; n <= NMAX; n++) SAMPLE.push({ n, polys: sampleRow(n, per, rnd) });
   ALL = SAMPLE.flatMap(r => r.polys);
   const ms = performance.now() - t0;
   buildScene();
@@ -532,14 +573,12 @@ document.addEventListener("keydown", e => {
   if ((e.key === "r" || e.key === "R") && !e.target.closest("select, input")) generate();
 });
 document.getElementById("regen").addEventListener("click", generate);
-document.getElementById("nmax").addEventListener("change", generate);
 document.getElementById("per").addEventListener("change", generate);
 
 // ---------------------------------------------------------------------------------------------------------------
 // WebGL: one renderer and one scene; each card's polyhedron is drawn into that card's rectangle (scissor test).
 // ---------------------------------------------------------------------------------------------------------------
-let renderer, scene, camera, faceMat, rodMat;
-const unitBall = [];
+let renderer, scene, camera, faceMat, rodMat, ballGeo, rodGeo;
 
 function initGL() {
   const canvas = document.getElementById("gl");
@@ -554,9 +593,11 @@ function initGL() {
   // No polygon offset: the rods sit on the faces geometrically, and a slope-scaled offset would push faces seen
   // edge-on so far back that rods on the far side show through them.
   faceMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  rodMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 50 });
-  const ico = new THREE.IcosahedronGeometry(1, 1).toNonIndexed().attributes.position.array;
-  for (let i = 0; i < ico.length; i++) unitBall.push(ico[i]);
+  // Balls and half-rods are instances of one unit sphere and one unit open cylinder (along y, from -1/2 to 1/2),
+  // each copy with its own transform and colour, so a new sample costs a few matrices per edge, not a mesh.
+  rodMat = new THREE.MeshPhongMaterial({ shininess: 50 });
+  ballGeo = new THREE.IcosahedronGeometry(1, 1);
+  rodGeo = new THREE.CylinderGeometry(1, 1, 1, 7, 1, true);
 }
 
 const white = () => new THREE.Color(0xffffff);
@@ -568,21 +609,13 @@ function pushTri(P, N, C, a, b, c, n, col) {
   P.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) { N.push(...n); C.push(col.r, col.g, col.b); }
 }
 
-function cylinder(P, N, C, p, q, r, col) {
-  const d = sub(q, p), L = Math.hypot(...d); if (L < 1e-9) return;
-  const dn = d.map(t => t / L), h = Math.abs(dn[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-  let u = cross(dn, h); const ul = Math.hypot(...u); u = u.map(t => t / ul); const w = cross(dn, u);
-  const S = 7;
-  for (let i = 0; i < S; i++) {
-    const a0 = 2 * Math.PI * i / S, a1 = 2 * Math.PI * (i + 1) / S;
-    const n0 = [0, 1, 2].map(j => Math.cos(a0) * u[j] + Math.sin(a0) * w[j]);
-    const n1 = [0, 1, 2].map(j => Math.cos(a1) * u[j] + Math.sin(a1) * w[j]);
-    const p0 = p.map((t, j) => t + r * n0[j]), p1 = p.map((t, j) => t + r * n1[j]);
-    const q0 = q.map((t, j) => t + r * n0[j]), q1 = q.map((t, j) => t + r * n1[j]);
-    P.push(...p0, ...q0, ...q1, ...p0, ...q1, ...p1);
-    N.push(...n0, ...n0, ...n1, ...n0, ...n1, ...n1);
-    for (let k = 0; k < 6; k++) C.push(col.r, col.g, col.b);
-  }
+const UP = new THREE.Vector3(0, 1, 0), tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpS = new THREE.Vector3();
+// Instance i of the unit cylinder, stretched into a rod of radius r from p to q.
+function placeRod(mesh, i, p, q, r, col) {
+  const d = sub(q, p), L = Math.hypot(...d) || 1e-9;
+  tmpQ.setFromUnitVectors(UP, tmpV.set(d[0] / L, d[1] / L, d[2] / L));
+  tmpM.compose(tmpV.set((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2), tmpQ, tmpS.set(r, L, r));
+  mesh.setMatrixAt(i, tmpM); mesh.setColorAt(i, col);
 }
 
 function geom(P, N, C) {
@@ -594,7 +627,7 @@ function geom(P, N, C) {
 }
 
 function buildScene() {
-  for (const child of [...scene.children]) if (child.isGroup) { child.traverse(o => o.geometry && o.geometry.dispose()); scene.remove(child); }
+  for (const child of [...scene.children]) if (child.isGroup) { child.children[0].geometry.dispose(); scene.remove(child); }   // ball and rod geometry are shared
   ALL.forEach((Pl, idx) => {
     const pos = Pl.pos, deg = Pl.rot.map(r => r.length), mid = centroid(pos);
     const fP = [], fN = [], fC = [], dartN = new Map(), vertN = pos.map(() => [0, 0, 0]);
@@ -607,26 +640,30 @@ function buildScene() {
         if (dot(cross(sub(a, c), sub(b, c)), nr) >= 0) pushTri(fP, fN, fC, c, a, b, nr, col); else pushTri(fP, fN, fC, c, b, a, nr, col);
       }
     }
+    // Sizes: balls shrink as n grows, and each ball also stays under a third of its shortest edge, so corners that
+    // sit close together get smaller balls. Rods thin with n and are never thicker than half the smallest ball.
     // Rods and balls are lifted off the surface: a rod moves out along the bisector of its two faces just far enough
     // to rest on both (instead of being half buried in them), a ball along the mean normal of its faces.
-    const rP = [], rN = [], rC = [], R = 0.032, B = 0.072;
+    const shrink = Math.min(1, Math.pow(10 / Pl.n, 0.45));
+    const Bv = pos.map((p, v) => Math.max(0.018, Math.min(0.072 * shrink, 0.32 * Math.min(...Pl.rot[v].map(w => Math.hypot(...sub(p, pos[w])))))));
+    const R = Math.max(0.01, Math.min(0.032 * shrink, 0.5 * Math.min(...Bv)));
     const lift = (dir, normals, r) => { const l = Math.hypot(...dir) || 1, d = dir.map(t => t / l);
       const s = r / Math.max(0.35, Math.min(...normals.map(n => dot(n, d)))); return d.map(t => t * s); };
-    for (const [a, b] of Pl.edges) {
+    const rods = new THREE.InstancedMesh(rodGeo, rodMat, 2 * Pl.edges.length);
+    Pl.edges.forEach(([a, b], i) => {
       const n1 = dartN.get(KEY(a, b)), n2 = dartN.get(KEY(b, a)), o = lift([0, 1, 2].map(j => n1[j] + n2[j]), [n1, n2], R);
       const pa = pos[a].map((t, j) => t + o[j]), pb = pos[b].map((t, j) => t + o[j]), m = pa.map((t, j) => (t + pb[j]) / 2);
-      cylinder(rP, rN, rC, pa, m, R, rodColor(deg[a]));
-      cylinder(rP, rN, rC, m, pb, R, rodColor(deg[b]));
-    }
+      placeRod(rods, 2 * i, pa, m, R, rodColor(deg[a]));
+      placeRod(rods, 2 * i + 1, m, pb, R, rodColor(deg[b]));
+    });
+    const balls = new THREE.InstancedMesh(ballGeo, rodMat, pos.length);
     pos.forEach((p0, v) => {
-      const col = ballColor(deg[v]), o = lift(vertN[v], Pl.rot[v].map(w => dartN.get(KEY(v, w))), R), p = p0.map((t, j) => t + o[j]);
-      for (let i = 0; i < unitBall.length; i += 3) {
-        const nrm = [unitBall[i], unitBall[i + 1], unitBall[i + 2]];
-        rP.push(p[0] + B * nrm[0], p[1] + B * nrm[1], p[2] + B * nrm[2]); rN.push(...nrm); rC.push(col.r, col.g, col.b);
-      }
+      const o = lift(vertN[v], Pl.rot[v].map(w => dartN.get(KEY(v, w))), R);
+      tmpM.compose(tmpV.set(p0[0] + o[0], p0[1] + o[1], p0[2] + o[2]), tmpQ.identity(), tmpS.setScalar(Bv[v]));
+      balls.setMatrixAt(v, tmpM); balls.setColorAt(v, ballColor(deg[v]));
     });
     const grp = new THREE.Group();
-    grp.add(new THREE.Mesh(geom(fP, fN, fC), faceMat), new THREE.Mesh(geom(rP, rN, rC), rodMat));
+    grp.add(new THREE.Mesh(geom(fP, fN, fC), faceMat), rods, balls);
     grp.visible = false;
     grp.userData.phase = idx * 0.61;
     scene.add(grp);
