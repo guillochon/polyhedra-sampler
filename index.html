@@ -38,7 +38,7 @@ body { font-family: var(--font-body); font-size: 14px; line-height: 1.5; }
 .wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; display: flex; flex-direction: column; gap: 28px; }
 
-header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: end; }
+header.top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
 .eyebrow a { color: inherit; }
 h1 { font-family: var(--font-display); font-weight: 600; font-size: 36px; line-height: 1.05; margin: 0 0 10px; text-wrap: balance; }
@@ -47,10 +47,17 @@ h1 { font-family: var(--font-display); font-weight: 600; font-size: 36px; line-h
 .lede a { color: var(--accent); }
 .seq { font-family: var(--font-mono); font-size: 13px; color: var(--fg); }
 
-.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
 .controls label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
 select, button { font: inherit; color: var(--fg); }
 select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.switch { cursor: pointer; color: var(--fg) !important; user-select: none; position: relative; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch .track { width: 32px; height: 18px; border-radius: 999px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); transition: transform .15s; }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(14px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
 #regen { font-weight: 600; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); cursor: pointer; }
 #regen:hover { filter: brightness(1.1); }
 #timing { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-width: 16ch; text-align: right; }
@@ -97,8 +104,6 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2; }
 #err { padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; }
 @media (max-width: 720px) {
-  header.top { grid-template-columns: minmax(0, 1fr); }
-  .controls { justify-content: flex-start; }
   h1 { font-size: 28px; }
   .cards { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
 }
@@ -107,16 +112,15 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 <div class="wrap">
   <header class="top">
     <div>
-      <p class="eyebrow"><a href="https://oeis.org/A000944" target="_blank" rel="noopener">OEIS A000944</a> · polyhedra with n vertices</p>
+      <p class="eyebrow"><a id="anum" href="https://oeis.org/A000944" target="_blank" rel="noopener">OEIS A000944</a> · <span id="what">polyhedra with n vertices</span></p>
       <h1>Polyhedra Sampler</h1>
-      <p class="lede">A polyhedron's skeleton is a 3-connected planar graph (Steinitz), so A000944 counts them:
-        <span class="seq">1, 2, 7, 34, 257, 2606, 32300, …</span> for n = 4, 5, 6, …
-        (the OEIS lists n ≤ 18; the counts here for n = 19 to 40 are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).
+      <p class="lede"><span id="intro"></span>
         Each row below is a random sample of <b>distinct</b> polyhedra with n vertices, drawn in canonical form
         (every edge tangent to the unit sphere, so symmetric graphs look symmetric). Hover or tap one to mark its
         relatives in the sample.</p>
     </div>
     <div class="controls">
+      <label class="switch" for="tri"><input type="checkbox" id="tri" role="switch"><span class="track" aria-hidden="true"></span>Restrict faces to triangles</label>
       <label for="per">Per row
         <select id="per"><option>6</option><option selected>8</option><option>12</option><option>16</option></select></label>
       <button type="button" id="regen">New sample</button>
@@ -144,9 +148,10 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 // seen from outside). For a 3-connected planar graph this embedding is unique up to mirror image (Whitney), so it
 // carries no extra information but makes faces, duals and canonical forms easy.
 // ---------------------------------------------------------------------------------------------------------------
-// A000944(n) as exact decimal strings (past 2^53 from n = 20). The OEIS entry has n <= 18 (exhaustive generation);
-// n >= 19 are this project's formula counts (github.com/guillochon/oeis-results/tree/main/A000944).
-const COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "32300", "440564", "6384634",
+// Counts by n as exact decimal strings (past 2^53 from n = 20). A000944, all polyhedra: the OEIS entry has n <= 18
+// (exhaustive generation); n >= 19 are this project's formula counts (github.com/guillochon/oeis-results/tree/main/A000944).
+// A000109, simplicial polyhedra (all faces triangles): the OEIS has n <= 24; n >= 25 are ours (same page, derived/).
+const ALL_COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "32300", "440564", "6384634",
   "96262938", "1496225352", "23833988129", "387591510244", "6415851530241", "107854282197058", "1837856160118250",
   "31696106245572086", "552533560690636208", "9725100290645366750", "172665610387355491030",
   "3089897351402967680382", "55693596773314728386434", "1010472821318274587081170", "18444616002584669852951766",
@@ -156,7 +161,34 @@ const COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "323
   "5111909800989602220520842699871144004", "97236992305707437010775781801607307042",
   "1854883285393075863218182649498233922286", "35478950056586460924968154727569837727537",
   "680349069787813513725946584317522497406424"];
-const COUNTS = COUNT_TEXT.map(Number), OEIS_MAX = 18, NMAX = 40;
+const TRI_COUNT_TEXT = ["0", "0", "0", "1", "1", "1", "2", "5", "14", "50", "233", "1249", "7595", "49566",
+  "339722", "2406841", "17490241", "129664753", "977526957", "7475907149", "57896349553", "453382272049",
+  "3585853662949", "28615703421545", "230214772514389", "1865788057030046", "15223573236152171",
+  "124984185719818060", "1031966014832473499", "8565634704508307225", "71444726063609145855",
+  "598615109547501485250", "5036835564907478084387", "42548033773880362648210", "360747612140139461869803",
+  "3069237293624723735378569", "26198125851178652910206289", "224305725370719622427214688",
+  "1926040853688076902903622467", "16583511070523241238223171006", "143156062705641154797382062151"];
+const MODES = {
+  all: { anum: "A000944", what: "polyhedra with n vertices", counts: ALL_COUNT_TEXT, oeisMax: 18, triangles: false,
+    link: "https://github.com/guillochon/oeis-results/tree/main/A000944",
+    intro: `A polyhedron's skeleton is a 3-connected planar graph (Steinitz), so A000944 counts them:
+      <span class="seq">1, 2, 7, 34, 257, 2606, 32300, …</span> for n = 4, 5, 6, … (the OEIS lists n ≤ 18; the counts
+      here for n = 19 to 40 are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).` },
+  tri: { anum: "A000109", what: "simplicial polyhedra (all faces triangles) with n vertices", counts: TRI_COUNT_TEXT, oeisMax: 24, triangles: true,
+    link: "https://github.com/guillochon/oeis-results/tree/main/A000944/derived",
+    intro: `With every face a triangle a polyhedron is simplicial, and its skeleton is a triangulation of the sphere;
+      A000109 counts them: <span class="seq">1, 1, 2, 5, 14, 50, 233, 1249, …</span> for n = 4, 5, 6, … (the OEIS lists
+      n ≤ 24; the counts here for n = 25 to 40 are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944/derived" target="_blank" rel="noopener">new, by formula</a>).` },
+};
+let MODE, COUNT_TEXT, COUNTS, OEIS_MAX;
+const NMAX = 40;
+function setMode(triangles) {
+  MODE = triangles ? MODES.tri : MODES.all;
+  COUNT_TEXT = MODE.counts; COUNTS = COUNT_TEXT.map(Number); OEIS_MAX = MODE.oeisMax;
+  const a = document.getElementById("anum"); a.textContent = "OEIS " + MODE.anum; a.href = "https://oeis.org/" + MODE.anum;
+  document.getElementById("what").textContent = MODE.what;
+  document.getElementById("intro").innerHTML = MODE.intro;
+}
 const PAL = ["", "", "", "#2f6fdf", "#16a072", "#e3ab0b", "#ec6a1c", "#d3345a", "#8a47b8"];
 const palIdx = k => Math.min(k, 8);
 
@@ -275,7 +307,8 @@ function tryFlip(rot, u, v) {
 // A random polyhedron: hull of random points on the sphere (a triangulation), random edge flips (so triangulations
 // that cannot be inscribed in a sphere also occur), then delete edges in random order while the graph stays
 // 3-connected, down to a random edge count between 3n/2 and 3n-6. Every polyhedron arises this way; not uniformly.
-function randomPolyhedron(n, rnd) {
+// With triangles only, stop after the flips: flips connect all triangulations with n vertices (Wagner).
+function randomPolyhedron(n, rnd, triangles) {
   let rot = null;
   while (!rot) {
     const pts = [];
@@ -283,6 +316,7 @@ function randomPolyhedron(n, rnd) {
     rot = hullRot(pts);
   }
   for (let t = 0; t < 3 * n; t++) { const u = Math.floor(rnd() * n); tryFlip(rot, u, rot[u][Math.floor(rnd() * rot[u].length)]); }
+  if (triangles) return rot;
   const emax = 3 * n - 6, emin = Math.ceil(3 * n / 2), target = emin + Math.floor(rnd() * (emax - emin + 1));
   const E = edgesOf(rot);
   for (let i = E.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [E[i], E[j]] = [E[j], E[i]]; }
@@ -297,8 +331,8 @@ function randomPolyhedron(n, rnd) {
   return rot;
 }
 
-// Relatives, computed on demand: graphs one edge deletion away (3-connected ones), and one edge contraction away
-// (a contraction in P is a deletion in its dual).
+// Relatives, computed on demand: graphs one edge deletion away (3-connected ones), one edge contraction away (a
+// contraction in P is a deletion in its dual), and for a triangulation, one edge flip away.
 function deletions(rot) {
   const out = new Set();
   for (const [u, v] of edgesOf(rot)) {
@@ -316,7 +350,12 @@ function relatives(P) {
     const r = cloneRot(D); removeEdge(r, u, v);
     if (stillTriconnected(r, u, v)) con.add(canon(dualRot(r)).key);
   }
-  return (P.rel = { del: deletions(P.rot), con });
+  const flip = new Set();
+  if (P.F === 2 * P.n - 4) for (const [u, v] of edgesOf(P.rot)) {
+    const r = cloneRot(P.rot), d = r[u].length; tryFlip(r, u, v);
+    if (r[u].length < d) flip.add(canon(r).key);
+  }
+  return (P.rel = { del: deletions(P.rot), con, flip });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -486,7 +525,7 @@ function faceSig(F) { const c = {}; for (const f of F) c[f.length] = (c[f.length
 function sampleRow(n, per, rnd) {
   const want = Math.min(per, COUNTS[n]), seen = new Map(), tries = COUNTS[n] <= per ? 400 : per * 30;
   for (let t = 0; t < tries && seen.size < want; t++) {
-    const rot = randomPolyhedron(n, rnd), c = canon(rot);
+    const rot = randomPolyhedron(n, rnd, MODE.triangles), c = canon(rot);
     if (!seen.has(c.key)) seen.set(c.key, { n, rot, key: c.key, aut: c.aut, E: edgesOf(rot).length });
   }
   const polys = [...seen.values()];
@@ -526,10 +565,10 @@ function renderRows() {
     return `<section class="row" aria-label="Polyhedra with ${n} vertices">
       <div class="row-head"><h2><i>n</i> = ${n}</h2>
         <span class="count">${BigInt(COUNT_TEXT[n]).toLocaleString("en-US")} ${COUNTS[n] === 1 ? "polyhedron" : "polyhedra"}</span>
-        ${n > OEIS_MAX ? `<a class="new" href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener"
-          title="Beyond the OEIS entry, which ends at n = 18: counted by formula in this project">new count</a>` : ""}
-        <span class="span">${all ? `all ${polys.length} shown` : `${polys.length} sampled`} · ${n === 4 ? "6 edges" :
-          `by edge count, ${Math.ceil(3 * n / 2)} to ${3 * n - 6} (all faces triangles)`}</span></div>
+        ${n > OEIS_MAX ? `<a class="new" href="${MODE.link}" target="_blank" rel="noopener"
+          title="Beyond the OEIS entry, which ends at n = ${OEIS_MAX}: counted by formula in this project">new count</a>` : ""}
+        <span class="span">${all ? `all ${polys.length} shown` : `${polys.length} sampled`} · ${MODE.triangles || n === 4 ?
+          `${3 * n - 6} edges, ${2 * n - 4} triangles` : `by edge count, ${Math.ceil(3 * n / 2)} to ${3 * n - 6} (all faces triangles)`}</span></div>
       <div class="cards">${polys.map(P => {
         const i = ALL.indexOf(P);
         const chips = Object.entries(P.sig).map(([k, c]) => `<span>${sw(+k)}${c}</span>`).join("");
@@ -544,11 +583,12 @@ function renderRows() {
   selected = null; pinned = false; showRelations();
 }
 
-const REL = { dual: "dual", self: "self-dual", del: "edge removed", add: "edge added", con: "edge contracted", split: "vertex split" };
+const REL = { dual: "dual", self: "self-dual", flip: "edge flipped", del: "edge removed", add: "edge added", con: "edge contracted", split: "vertex split" };
 
 function relationOf(S, Q) {
   if (Q === S) return null;
   if (Q.key === S.dualKey) return "dual";
+  if (Q.n === S.n && Q.E === S.E && S.F === 2 * S.n - 4 && relatives(S).flip.has(Q.key)) return "flip";
   if (Q.n === S.n && Q.E === S.E - 1 && relatives(S).del.has(Q.key)) return "del";
   if (Q.n === S.n && Q.E === S.E + 1 && relatives(Q).del.has(S.key)) return "add";
   if (Q.n === S.n - 1 && relatives(S).con.has(Q.key)) return "con";
@@ -560,7 +600,9 @@ function showRelations() {
   const info = document.getElementById("info");
   for (const P of ALL) { P.el.classList.remove("sel", "rel", "dim"); const t = P.el.querySelector(".tag"); t.hidden = true; }
   if (!selected) {
-    info.innerHTML = "Hover a polyhedron to mark its relatives in this sample: its dual, and the ones one edge deletion or one edge contraction away. Click to pin it.";
+    info.innerHTML = MODE.triangles
+      ? "Hover a polyhedron to mark its relatives in this sample: the ones one edge flip (same n) or one edge contraction (n − 1, or n + 1 the other way) away. Click to pin it."
+      : "Hover a polyhedron to mark its relatives in this sample: its dual, and the ones one edge deletion or one edge contraction away. Click to pin it.";
     return;
   }
   const S = selected, tally = {};
@@ -594,6 +636,15 @@ document.addEventListener("keydown", e => {
   if ((e.key === "r" || e.key === "R") && !e.target.closest("select, input")) generate();
 });
 document.getElementById("regen").addEventListener("click", generate);
+// The toggle's state is kept in the link (#triangles), so a triangles-only view can be shared.
+const triBox = document.getElementById("tri");
+triBox.addEventListener("change", () => {
+  setMode(triBox.checked);
+  try { history.replaceState(null, "", triBox.checked ? "#triangles" : location.pathname + location.search); } catch (e) {}
+  generate();
+});
+triBox.checked = location.hash === "#triangles";
+setMode(triBox.checked);
 document.getElementById("per").addEventListener("change", generate);
 
 // ---------------------------------------------------------------------------------------------------------------

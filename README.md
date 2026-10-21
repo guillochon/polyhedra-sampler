@@ -9,6 +9,11 @@ polyhedron's shape is computed as its row scrolls into view. The OEIS lists the 
 n = 19 to 40 are new, computed by formula in
 [oeis-results/A000944](https://github.com/guillochon/oeis-results/tree/main/A000944).
 
+- **Triangles only.** The "Restrict faces to triangles" toggle switches to [A000109](https://oeis.org/A000109),
+  the simplicial polyhedra (triangulations of the sphere): 1, 1, 2, 5, 14, 50, 233, … for n = 4, 5, 6, … The OEIS
+  lists them up to n = 24; the counts for n = 25 to 40 are new, from the same computation. Link to this view with
+  [`#triangles`](https://guillochon.github.io/polyhedra-sampler/#triangles). Relatives there are one edge flip or
+  one edge contraction apart.
 - **Colours.** One scale for both: faces by number of sides, corners by degree, each half of an edge by the corner it
   leaves. Duality swaps faces and corners, so a polyhedron and its dual trade colours.
 - **Relatives.** Hover or tap a polyhedron to mark the others in the sample that are its dual, or one edge deletion
