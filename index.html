@@ -111,7 +111,7 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; ba
       <h1>Polyhedra Sampler</h1>
       <p class="lede">A polyhedron's skeleton is a 3-connected planar graph (Steinitz), so A000944 counts them:
         <span class="seq">1, 2, 7, 34, 257, 2606, 32300, …</span> for n = 4, 5, 6, …
-        (the OEIS lists n ≤ 18; the counts here for n = 19 to 30 are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).
+        (the OEIS lists n ≤ 18; the counts here for n = 19 to 40 are <a href="https://github.com/guillochon/oeis-results/tree/main/A000944" target="_blank" rel="noopener">new, by formula</a>).
         Each row below is a random sample of <b>distinct</b> polyhedra with n vertices, drawn in canonical form
         (every edge tangent to the unit sphere, so symmetric graphs look symmetric). Hover or tap one to mark its
         relatives in the sample.</p>
@@ -150,8 +150,13 @@ const COUNT_TEXT = ["0", "0", "0", "0", "1", "2", "7", "34", "257", "2606", "323
   "96262938", "1496225352", "23833988129", "387591510244", "6415851530241", "107854282197058", "1837856160118250",
   "31696106245572086", "552533560690636208", "9725100290645366750", "172665610387355491030",
   "3089897351402967680382", "55693596773314728386434", "1010472821318274587081170", "18444616002584669852951766",
-  "338559437591583889391837842", "6246524274375883224870258320", "115802469478907466726560502772"];
-const COUNTS = COUNT_TEXT.map(Number), OEIS_MAX = 18, NMAX = 30;
+  "338559437591583889391837842", "6246524274375883224870258320", "115802469478907466726560502772",
+  "2156392465904152551633439664656", "40321607164314613909499184810474", "756885454198595130457093610733207",
+  "14259300397464793694906262785553986", "269553677716154334083059055531235023",
+  "5111909800989602220520842699871144004", "97236992305707437010775781801607307042",
+  "1854883285393075863218182649498233922286", "35478950056586460924968154727569837727537",
+  "680349069787813513725946584317522497406424"];
+const COUNTS = COUNT_TEXT.map(Number), OEIS_MAX = 18, NMAX = 40;
 const PAL = ["", "", "", "#2f6fdf", "#16a072", "#e3ab0b", "#ec6a1c", "#d3345a", "#8a47b8"];
 const palIdx = k => Math.min(k, 8);
 
@@ -163,7 +168,7 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const prevIn = (r, x) => r[(r.indexOf(x) + r.length - 1) % r.length];
 const cloneRot = rot => rot.map(r => r.slice());
-const KEY = (a, b) => a * 64 + b;
+const KEY = (a, b) => a * 128 + b;   // a dart; vertex numbers stay below 128 (duals at n = 40 have up to 76)
 
 function edgesOf(rot) { const e = []; rot.forEach((r, u) => r.forEach(v => { if (u < v) e.push([u, v]); })); return e; }
 
@@ -332,15 +337,24 @@ function newell(pts) {
 }
 const centroid = pts => { const c = [0, 0, 0]; for (const p of pts) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; } return c.map(t => t / pts.length); };
 
-// Solve A x = b in place for symmetric positive definite A (m x m, row-major): Cholesky, then two triangular solves.
-function cholSolve(A, b, m) {
-  for (let j = 0; j < m; j++) {
-    let s = A[j * m + j]; for (let k = 0; k < j; k++) s -= A[j * m + k] * A[j * m + k];
-    const dj = Math.sqrt(s); A[j * m + j] = dj;
-    for (let i = j + 1; i < m; i++) { let t = A[i * m + j]; for (let k = 0; k < j; k++) t -= A[i * m + k] * A[j * m + k]; A[i * m + j] = t / dj; }
+// Solve A x = b for symmetric positive definite A, given as a product A(v, out), by conjugate gradients with a
+// diagonal (Jacobi) preconditioner. x starts at zero.
+function pcg(A, diag, b, x, m) {
+  const r = Float64Array.from(b), z = new Float64Array(m), p = new Float64Array(m), Ap = new Float64Array(m);
+  x.fill(0);
+  let bb = 0; for (let i = 0; i < m; i++) bb += b[i] * b[i];
+  for (let i = 0; i < m; i++) { z[i] = r[i] / diag[i]; p[i] = z[i]; }
+  let rz = 0; for (let i = 0; i < m; i++) rz += r[i] * z[i];
+  for (let it = 0; it < 4 * m + 20; it++) {
+    A(p, Ap);
+    let pAp = 0; for (let i = 0; i < m; i++) pAp += p[i] * Ap[i];
+    const a = rz / pAp; let rr = 0;
+    for (let i = 0; i < m; i++) { x[i] += a * p[i]; r[i] -= a * Ap[i]; rr += r[i] * r[i]; }
+    if (rr <= 1e-26 * bb) break;
+    let rz2 = 0; for (let i = 0; i < m; i++) { z[i] = r[i] / diag[i]; rz2 += r[i] * z[i]; }
+    const beta = rz2 / rz; rz = rz2;
+    for (let i = 0; i < m; i++) p[i] = z[i] + beta * p[i];
   }
-  for (let i = 0; i < m; i++) { let t = b[i]; for (let k = 0; k < i; k++) t -= A[i * m + k] * b[k]; b[i] = t / A[i * m + i]; }
-  for (let i = m - 1; i >= 0; i--) { let t = b[i]; for (let k = i + 1; k < m; k++) t -= A[k * m + i] * b[k]; b[i] = t / A[i * m + i]; }
 }
 
 // The Moebius map of the sphere sending a point a inside the ball to the centre is x -> ((1-|a|^2)(x-a) - |x-a|^2 a) / |x-a|^2.
@@ -370,20 +384,26 @@ function koebe(rot, F, dartFace) {
     return s; };
   let u = new Float64Array(N), g = new Float64Array(N), res = defect(u, g);
   let u2 = new Float64Array(N), g2 = new Float64Array(N);
-  const A = new Float64Array(M * M), d = new Float64Array(M);
-  for (let it = 0; it < 50 && res > 1e-22; it++) {
-    A.fill(0);
-    for (const i of idx) {
-      const p = slot[i]; if (p < 0) continue;
-      d[p] = g[i];
-      for (let j = st[i]; j < st[i + 1]; j++) { const k = NB[j], w = 0.5 / Math.cosh(u[k] - u[i]); A[p * M + p] += w; if (slot[k] >= 0) A[p * M + slot[k]] -= w; }
+  // The Laplacian is sparse (one entry per neighbour), so each Newton step solves it by conjugate gradients.
+  const W = new Float64Array(NB.length), diag = new Float64Array(M), d = new Float64Array(M), rhs = new Float64Array(M);
+  const lap = (xv, out) => {   // out = L xv on the free circles
+    for (let k = 1; k <= M; k++) { const i = idx[k], p = k - 1; let s = diag[p] * xv[p];
+      for (let j = st[i]; j < st[i + 1]; j++) { const q = slot[NB[j]]; if (q >= 0) s -= W[j] * xv[q]; }
+      out[p] = s; } };
+  for (let it = 0; it < 50 && res > 1e-20; it++) {   // squared angle defects; 1e-20 is about 1e-10 rad each
+    for (let k = 1; k <= M; k++) {
+      const i = idx[k], p = k - 1; let s = 0;
+      for (let j = st[i]; j < st[i + 1]; j++) { const w = 0.5 / Math.cosh(u[NB[j]] - u[i]); W[j] = w; s += w; }
+      diag[p] = s; rhs[p] = g[i];
     }
-    cholSolve(A, d, M);
+    pcg(lap, diag, rhs, d, M);
+    let moved = false;
     for (let t = 1; t > 1e-6; t /= 2) {   // step (halved until the defect drops)
       u2.set(u); for (let k = 1; k <= M; k++) u2[idx[k]] += t * d[k - 1];
       const r2 = defect(u2, g2);
-      if (r2 < res) { [u, u2] = [u2, u]; [g, g2] = [g2, g]; res = r2; break; }
+      if (r2 < res) { [u, u2] = [u2, u]; [g, g2] = [g2, g]; res = r2; moved = true; break; }
     }
+    if (!moved) break;   // at the limit of floating point
   }
   for (let i = 0; i < N; i++) x[i] = Math.exp(u[i]);
   const rv = x.subarray(0, n), rf = x.subarray(n);
@@ -446,12 +466,13 @@ function koebe(rot, F, dartFace) {
 
 function embed(P) {
   const { F, dartFace } = traceFaces(P.rot);
+  P.faces = F;   // same faces as before, now in the order koebe() numbers them
   // Drawn centred on its bounding box and scaled to fit (a lopsided canonical polyhedron would look small otherwise).
   let pos = koebe(P.rot, F, dartFace);
   const c = [0, 1, 2].map(j => (Math.min(...pos.map(p => p[j])) + Math.max(...pos.map(p => p[j]))) / 2);
   pos = pos.map(p => sub(p, c));
   const r = Math.max(...pos.map(p => Math.hypot(...p)));
-  P.pos = pos.map(p => p.map(t => t / r)); P.faces = F; P.edges = edgesOf(P.rot);
+  P.pos = pos.map(p => p.map(t => t / r));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -469,7 +490,7 @@ function sampleRow(n, per, rnd) {
     if (!seen.has(c.key)) seen.set(c.key, { n, rot, key: c.key, aut: c.aut, E: edgesOf(rot).length });
   }
   const polys = [...seen.values()];
-  for (const P of polys) { embed(P); P.F = P.faces.length; P.sig = faceSig(P.faces); P.dualKey = canon(dualRot(P.rot)).key; }
+  for (const P of polys) { P.faces = traceFaces(P.rot).F; P.edges = edgesOf(P.rot); P.F = P.faces.length; P.sig = faceSig(P.faces); P.dualKey = canon(dualRot(P.rot)).key; }
   const sigKey = P => Object.entries(P.sig).map(([k, c]) => String(c).padStart(2, "0") + k).join("");
   polys.sort((a, b) => a.E - b.E || (sigKey(a) < sigKey(b) ? -1 : 1));
   return polys;
@@ -483,7 +504,7 @@ function generate() {
   for (let n = 4; n <= NMAX; n++) SAMPLE.push({ n, polys: sampleRow(n, per, rnd) });
   ALL = SAMPLE.flatMap(r => r.polys);
   const ms = performance.now() - t0;
-  buildScene();
+  clearScene();   // shapes and meshes are built as cards come into view (see frame)
   renderRows();
   document.getElementById("timing").textContent = `${ALL.length} polyhedra · ${Math.round(ms)} ms`;
 }
@@ -626,9 +647,15 @@ function geom(P, N, C) {
   return g;
 }
 
-function buildScene() {
+function clearScene() {
   for (const child of [...scene.children]) if (child.isGroup) { child.children[0].geometry.dispose(); scene.remove(child); }   // ball and rod geometry are shared
-  ALL.forEach((Pl, idx) => {
+}
+
+// The canonical shape and the 3D model of one polyhedron (its faces mesh, instanced rods and balls).
+function buildPoly(Pl) {
+  {
+    embed(Pl);
+    const idx = ALL.indexOf(Pl);
     const pos = Pl.pos, deg = Pl.rot.map(r => r.length), mid = centroid(pos);
     const fP = [], fN = [], fC = [], dartN = new Map(), vertN = pos.map(() => [0, 0, 0]);
     for (const f of Pl.faces) {
@@ -668,7 +695,7 @@ function buildScene() {
     grp.userData.phase = idx * 0.61;
     scene.add(grp);
     Pl.group = grp;
-  });
+  }
 }
 
 // Every polyhedron spins slowly about the vertical (at half speed when the system asks for reduced motion). The one
@@ -699,6 +726,14 @@ function frame(t) {
   const w = window.innerWidth, h = window.innerHeight, cv = renderer.domElement;
   if (cv.width !== Math.floor(w * renderer.getPixelRatio()) || cv.height !== Math.floor(h * renderer.getPixelRatio())) renderer.setSize(w, h, false);
   renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true);
+  // Shapes are built lazily, a few milliseconds' worth per frame: cards on screen first, then those within a screen.
+  const deadline = performance.now() + 8;
+  for (const margin of [0, h]) for (const P of ALL) {
+    if (P.group) continue;
+    if (performance.now() > deadline) break;
+    const r = P.view.getBoundingClientRect();
+    if (r.bottom > -margin && r.top < h + margin) buildPoly(P);
+  }
   const k = 1 - Math.exp(-EASE * dt), grown = [];
   for (const P of ALL) {
     const on = P === hover;
@@ -714,6 +749,7 @@ function frame(t) {
 }
 
 function draw(P, w, h, backed) {
+  if (!P.group) return;   // not built yet
   const r = zoomRect(P), bottom = r.top + r.height;
   if (bottom < 0 || r.top > h || r.left + r.width < 0 || r.left > w || r.width < 2) return;
   P.group.rotation.set(0.45 + P.oy, P.group.userData.phase + (P.spin || 0) + P.ox, 0, "XYZ");

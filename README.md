@@ -4,8 +4,9 @@
 
 [A000944](https://oeis.org/A000944) counts polyhedra by number of vertices: 1, 2, 7, 34, 257, 2606, 32300, … for
 n = 4, 5, 6, … By Steinitz's theorem these are the 3-connected planar graphs, up to isomorphism. The page draws a
-random sample of distinct polyhedra for every n from 4 to 30, in WebGL, and regenerates a new sample in a few hundred
-milliseconds. The OEIS lists the counts up to n = 18; those for n = 19 to 30 are new, computed by formula in
+random sample of distinct polyhedra for every n from 4 to 40, in WebGL. A new sample takes under 100 ms; each
+polyhedron's shape is computed as its row scrolls into view. The OEIS lists the counts up to n = 18; those for
+n = 19 to 40 are new, computed by formula in
 [oeis-results/A000944](https://github.com/guillochon/oeis-results/tree/main/A000944).
 
 - **Colours.** One scale for both: faces by number of sides, corners by degree, each half of an edge by the corner it
