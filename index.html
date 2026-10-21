@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Polyhedra Sampler</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* Layout: a header with controls and the colour key, then one row per vertex count n, each a wrapping grid of
+   polyhedron cards. A single fixed WebGL canvas draws every card's polyhedron into that card's square. */
+:root {
+  --bg: #eceff2;
+  --surface: #f8f9fa;
+  --fg: #1a2129;
+  --muted: #5a6573;
+  --line: #d3d9df;
+  --accent: #23415f;
+  --ring: #1a2129;
+  --font-display: "Spectral", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1317; --surface: #161b21; --fg: #e4e9ee; --muted: #95a1ae; --line: #29313a;
+    --accent: #9cc3e6; --ring: #e4e9ee; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1317; --surface: #161b21; --fg: #e4e9ee; --muted: #95a1ae; --line: #29313a;
+  --accent: #9cc3e6; --ring: #e4e9ee; color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body { font-family: var(--font-body); font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; display: flex; flex-direction: column; gap: 28px; }
+
+header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: end; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+.eyebrow a { color: inherit; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 36px; line-height: 1.05; margin: 0 0 10px; text-wrap: balance; }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); }
+.lede b { color: var(--fg); font-weight: 500; }
+.seq { font-family: var(--font-mono); font-size: 13px; color: var(--fg); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; }
+.controls label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+select, button { font: inherit; color: var(--fg); }
+select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+#regen { font-weight: 600; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); cursor: pointer; }
+#regen:hover { filter: brightness(1.1); }
+#timing { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-width: 16ch; text-align: right; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.key { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.key .title { font-size: 13px; color: var(--muted); }
+.key ul { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 0; padding: 0; }
+.key li { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.key .note { flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--muted); }
+
+#info { min-height: 3em; font-size: 13px; color: var(--muted); }
+#info b { color: var(--fg); font-weight: 600; }
+
+.row { display: flex; flex-direction: column; gap: 10px; }
+.row-head { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.row-head h2 { font-family: var(--font-display); font-weight: 500; font-size: 22px; margin: 0; }
+.row-head h2 i { font-style: italic; }
+.row-head .count { font-family: var(--font-mono); font-size: 13px; }
+.row-head .span { font-size: 12px; color: var(--muted); margin-left: auto; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 10px; }
+
+.card { all: unset; box-sizing: border-box; position: relative; display: flex; flex-direction: column; gap: 4px; padding: 6px 6px 8px;
+  border-radius: 8px; border: 1px solid transparent; cursor: pointer; min-width: 0; }
+.card:hover { background: var(--surface); }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card.sel { border-color: var(--ring); background: var(--surface); }
+.card.rel { border-color: var(--ring); border-style: dashed; background: var(--surface); }
+.card.dim { opacity: .45; }
+.view { width: 100%; aspect-ratio: 1; }
+.cap { font-family: var(--font-mono); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--fg); }
+.cap .aut { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 3px 6px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.chips span { display: inline-flex; gap: 3px; align-items: center; }
+.chips .sw { width: 9px; height: 9px; border-radius: 2px; }
+.tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  background: var(--fg); color: var(--surface); pointer-events: none; }
+.tag[hidden] { display: none; }
+.badge { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+
+#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2; }
+#err { padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; }
+@media (max-width: 720px) {
+  header.top { grid-template-columns: minmax(0, 1fr); }
+  .controls { justify-content: flex-start; }
+  h1 { font-size: 28px; }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow"><a href="https://oeis.org/A000944" target="_blank" rel="noopener">OEIS A000944</a> · polyhedra with n vertices</p>
+      <h1>Polyhedra Sampler</h1>
+      <p class="lede">A polyhedron's skeleton is a 3-connected planar graph (Steinitz), so A000944 counts them:
+        <span class="seq">1, 2, 7, 34, 257, 2606, 32300, …</span> for n = 4, 5, 6, …
+        Each row below is a random sample of <b>distinct</b> polyhedra with n vertices, drawn in canonical form
+        (every edge tangent to the unit sphere, so symmetric graphs look symmetric). Hover or tap one to mark its
+        relatives in the sample.</p>
+    </div>
+    <div class="controls">
+      <label for="nmax">Up to n =
+        <select id="nmax"><option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>13</option></select></label>
+      <label for="per">Per row
+        <select id="per"><option>6</option><option selected>8</option><option>12</option><option>16</option></select></label>
+      <button type="button" id="regen">New sample</button>
+      <span id="timing" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <div class="key">
+    <span class="title">One colour scale for both</span>
+    <ul id="legend"></ul>
+    <span class="note">Faces are coloured by their number of sides, corners by their degree, and each half of an edge by
+      the corner it leaves. Duality swaps the two, so a polyhedron and its dual trade colours between faces and corners.</span>
+  </div>
+
+  <p id="info" aria-live="polite"></p>
+  <main id="rows" class="wrap-rows" style="display:flex;flex-direction:column;gap:28px"></main>
+</div>
+<canvas id="gl" aria-hidden="true"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+// ---------------------------------------------------------------------------------------------------------------
+// Combinatorics. A polyhedron is a rotation system: rot[v] lists v's neighbours in cyclic order (counter-clockwise
+// seen from outside). For a 3-connected planar graph this embedding is unique up to mirror image (Whitney), so it
+// carries no extra information but makes faces, duals and canonical forms easy.
+// ---------------------------------------------------------------------------------------------------------------
+const COUNTS = [0, 0, 0, 0, 1, 2, 7, 34, 257, 2606, 32300, 440564, 6384634, 96262938];
+const PAL = ["", "", "", "#2f6fdf", "#16a072", "#e3ab0b", "#ec6a1c", "#d3345a", "#8a47b8"];
+const palIdx = k => Math.min(k, 8);
+
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const prevIn = (r, x) => r[(r.indexOf(x) + r.length - 1) % r.length];
+const cloneRot = rot => rot.map(r => r.slice());
+const KEY = (a, b) => a * 64 + b;
+
+function edgesOf(rot) { const e = []; rot.forEach((r, u) => r.forEach(v => { if (u < v) e.push([u, v]); })); return e; }
+
+// Convex hull of points in general position on the sphere: every point is a vertex, every face a triangle.
+function hullRot(p) {
+  const n = p.length, succ = p.map(() => new Map());
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) for (let k = j + 1; k < n; k++) {
+    const nr = cross(sub(p[j], p[i]), sub(p[k], p[i]));
+    let pos = 0, neg = 0;
+    for (let l = 0; l < n && !(pos && neg); l++) {
+      if (l === i || l === j || l === k) continue;
+      dot(nr, sub(p[l], p[i])) > 0 ? pos++ : neg++;
+    }
+    if (pos && neg) continue;
+    const [a, b, c] = pos ? [i, k, j] : [i, j, k];   // outward normal: the rest lie behind the face
+    succ[a].set(b, c); succ[b].set(c, a); succ[c].set(a, b);
+  }
+  const rot = [];
+  for (const m of succ) {
+    if (!m.size) return null;
+    const s = m.keys().next().value, r = [s];
+    for (let x = m.get(s), guard = 0; x !== s; x = m.get(x)) { if (x === undefined || ++guard > n) return null; r.push(x); }
+    rot.push(r);
+  }
+  return rot;
+}
+
+// Faces: dart u->v is followed by v->w, w the neighbour just before u around v.
+function traceFaces(rot) {
+  const seen = new Set(), F = [], dartFace = new Map();
+  rot.forEach((r, u) => r.forEach(v => {
+    if (seen.has(KEY(u, v))) return;
+    const f = []; let a = u, b = v;
+    do { seen.add(KEY(a, b)); dartFace.set(KEY(a, b), F.length); f.push(a); const c = prevIn(rot[b], a); a = b; b = c; }
+    while (a !== u || b !== v);
+    F.push(f);
+  }));
+  return { F, dartFace };
+}
+
+function dualRot(rot) {
+  const { F, dartFace } = traceFaces(rot);
+  return F.map(f => f.map((u, i) => dartFace.get(KEY(f[(i + 1) % f.length], u))));
+}
+
+// Vertex connectivity >= 3: no pair of vertices disconnects the rest.
+function triconnected(rot) {
+  const n = rot.length;
+  if (n < 4 || rot.some(r => r.length < 3)) return false;
+  const mark = new Int32Array(n), stack = new Int32Array(n); let stamp = 0;
+  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+    stamp++; mark[a] = mark[b] = stamp;
+    let s = 0; while (s === a || s === b) s++;
+    mark[s] = stamp; let cnt = 1, sp = 0; stack[sp++] = s;
+    while (sp) { const x = stack[--sp]; for (const y of rot[x]) if (mark[y] !== stamp) { mark[y] = stamp; cnt++; stack[sp++] = y; } }
+    if (cnt !== n - 2) return false;
+  }
+  return true;
+}
+
+// Canonical form (Weinberg's method): from every dart, in both orientations, number the vertices in breadth-first
+// order and write each vertex's neighbours in rotation order; the least code is canonical. The number of starts
+// that reach it is the order of the automorphism group (reflections included).
+function canon(rot) {
+  const n = rot.length, label = new Int32Array(n), qv = new Int32Array(n), qr = new Int32Array(n);
+  let best = null, aut = 0;
+  for (let u = 0; u < n; u++) for (const v of rot[u]) for (const dir of [1, -1]) {
+    label.fill(-1); label[u] = 0; let nl = 1, head = 0, tail = 0; qv[tail] = u; qr[tail++] = v;
+    const cur = []; let cmp = best ? 0 : -1;
+    scan: while (head < tail) {
+      const w = qv[head], ref = qr[head++], r = rot[w], d = r.length; let i = r.indexOf(ref);
+      for (let t = 0; t <= d; t++) {
+        let val = 0;
+        if (t < d) { const x = r[i]; i = (i + dir + d) % d; if (label[x] < 0) { label[x] = nl++; qv[tail] = x; qr[tail++] = w; } val = label[x] + 1; }
+        if (cmp === 0) { const b = best[cur.length]; if (val < b) cmp = -1; else if (val > b) { cmp = 1; break scan; } }
+        cur.push(val);
+      }
+    }
+    if (cmp < 0) { best = cur; aut = 1; } else if (cmp === 0) aut++;
+  }
+  return { key: String.fromCharCode(...best), aut };
+}
+
+function removeEdge(rot, u, v) { rot[u].splice(rot[u].indexOf(v), 1); rot[v].splice(rot[v].indexOf(u), 1); }
+
+// Flip the diagonal u-v of the two triangles u,v,a and v,u,b to a-b (triangulations stay triangulations).
+function tryFlip(rot, u, v) {
+  if (rot[u].length < 4 || rot[v].length < 4) return;
+  const a = prevIn(rot[v], u), b = prevIn(rot[u], v);
+  if (a === b || rot[a].includes(b)) return;
+  removeEdge(rot, u, v);
+  rot[a].splice(rot[a].indexOf(u) + 1, 0, b);
+  rot[b].splice(rot[b].indexOf(v) + 1, 0, a);
+}
+
+// A random polyhedron: hull of random points on the sphere (a triangulation), random edge flips (so triangulations
+// that cannot be inscribed in a sphere also occur), then delete edges in random order while the graph stays
+// 3-connected, down to a random edge count between 3n/2 and 3n-6. Every polyhedron arises this way; not uniformly.
+function randomPolyhedron(n, rnd) {
+  let rot = null;
+  while (!rot) {
+    const pts = [];
+    for (let i = 0; i < n; i++) { const z = 2 * rnd() - 1, t = 2 * Math.PI * rnd(), r = Math.sqrt(1 - z * z); pts.push([r * Math.cos(t), r * Math.sin(t), z]); }
+    rot = hullRot(pts);
+  }
+  for (let t = 0; t < 3 * n; t++) { const u = Math.floor(rnd() * n); tryFlip(rot, u, rot[u][Math.floor(rnd() * rot[u].length)]); }
+  const emax = 3 * n - 6, emin = Math.ceil(3 * n / 2), target = emin + Math.floor(rnd() * (emax - emin + 1));
+  const E = edgesOf(rot);
+  for (let i = E.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [E[i], E[j]] = [E[j], E[i]]; }
+  let m = emax;
+  for (const [u, v] of E) {
+    if (m <= target) break;
+    if (rot[u].length < 4 || rot[v].length < 4) continue;
+    const iu = rot[u].indexOf(v), iv = rot[v].indexOf(u);
+    removeEdge(rot, u, v);
+    if (triconnected(rot)) m--; else { rot[u].splice(iu, 0, v); rot[v].splice(iv, 0, u); }
+  }
+  return rot;
+}
+
+// Relatives, computed on demand: graphs one edge deletion away (3-connected ones), and one edge contraction away
+// (a contraction in P is a deletion in its dual).
+function deletions(rot) {
+  const out = new Set();
+  for (const [u, v] of edgesOf(rot)) {
+    if (rot[u].length < 4 || rot[v].length < 4) continue;
+    const r = cloneRot(rot); removeEdge(r, u, v);
+    if (triconnected(r)) out.add(canon(r).key);
+  }
+  return out;
+}
+function relatives(P) {
+  if (P.rel) return P.rel;
+  const D = dualRot(P.rot), con = new Set();
+  for (const [u, v] of edgesOf(D)) {
+    if (D[u].length < 4 || D[v].length < 4) continue;
+    const r = cloneRot(D); removeEdge(r, u, v);
+    if (triconnected(r)) con.add(canon(dualRot(r)).key);
+  }
+  return (P.rel = { del: deletions(P.rot), con });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Geometry: the canonical polyhedron (Koebe-Andreev-Thurston). Every edge touches the unit sphere, and the touching
+// points are centred on the origin; it is unique up to rotation, so symmetric graphs come out symmetric.
+// Computed exactly from the primal-dual circle pattern: each vertex and each face gets a circle on the sphere, vertex
+// circles touch along edges, and a face circle meets the circles of its vertices at right angles. Stereographic
+// projection from the touching point of one edge a-b turns the circles of a, b and of the two faces at that edge into
+// the sides of a rectangle; the other radii solve angle conditions (each circle sees its neighbours around a full
+// turn), found by coordinate descent on a convex problem. The pattern is laid out in the plane, mapped back to the
+// sphere and centred by a Moebius map; each vertex is the apex of the cone touching the sphere at its edges' points.
+// ---------------------------------------------------------------------------------------------------------------
+function newell(pts) {
+  let nx = 0, ny = 0, nz = 0;
+  for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length];
+    nx += (p[1] - q[1]) * (p[2] + q[2]); ny += (p[2] - q[2]) * (p[0] + q[0]); nz += (p[0] - q[0]) * (p[1] + q[1]); }
+  const l = Math.hypot(nx, ny, nz) || 1; return [nx / l, ny / l, nz / l];
+}
+const centroid = pts => { const c = [0, 0, 0]; for (const p of pts) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; } return c.map(t => t / pts.length); };
+const det3 = m => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+// Moebius map of the sphere sending the point a (inside the ball) to the centre.
+function mobius(x, a) { const d = sub(x, a), dd = dot(d, d), aa = dot(a, a); return [0, 1, 2].map(j => ((1 - aa) * d[j] - dd * a[j]) / dd); }
+
+function koebe(rot, F, dartFace) {
+  const n = rot.length, nf = F.length;
+  let a = 0; for (let v = 1; v < n; v++) if (rot[v].length > rot[a].length) a = v;
+  let b = rot[a][0]; for (const w of rot[a]) if (rot[w].length > rot[b].length) b = w;
+  const infV = new Uint8Array(n), infF = new Uint8Array(nf);
+  infV[a] = infV[b] = 1; infF[dartFace.get(KEY(a, b))] = infF[dartFace.get(KEY(b, a))] = 1;
+  const vF = rot.map((r, u) => r.map(w => dartFace.get(KEY(u, w))));   // vF[u][i]: the face between r[i] and r[i+1]
+
+  // Radii: vertices 0..n-1, faces n..n+nf-1. A finite circle i needs the sum over its finite neighbours j of
+  // atan(r_j / r_i) to be pi, less pi/2 for each neighbour that became a line.
+  const N = n + nf, x = new Float64Array(N).fill(1), fin = new Uint8Array(N), tgt = new Float64Array(N), st = new Int32Array(N + 1), nb = [];
+  for (let v = 0; v < n; v++) { fin[v] = !infV[v]; let k = 0; for (const f of vF[v]) if (infF[f]) k++; else nb.push(n + f); tgt[v] = Math.PI - k * Math.PI / 2; st[v + 1] = nb.length; }
+  for (let f = 0; f < nf; f++) { fin[n + f] = !infF[f]; let k = 0; for (const v of F[f]) if (infV[v]) k++; else nb.push(v); tgt[n + f] = Math.PI - k * Math.PI / 2; st[n + f + 1] = nb.length; }
+  const NB = Int32Array.from(nb);
+  for (let sweep = 0; sweep < 3000; sweep++) {
+    let change = 0;
+    for (let i = 0; i < N; i++) {
+      if (!fin[i]) continue;
+      const u0 = Math.log(x[i]); let u = u0;
+      for (let k = 0; k < 2; k++) {   // Newton on log r
+        const e = Math.exp(-u); let g = -tgt[i], dg = 0;
+        for (let j = st[i]; j < st[i + 1]; j++) { const y = x[NB[j]] * e; g += Math.atan(y); dg -= y / (1 + y * y); }
+        const s = g / dg; u -= s > 3 ? 3 : s < -3 ? -3 : s;
+      }
+      const d = u - u0; x[i] = Math.exp(u0 + 1.6 * d);   // over-relaxed
+      if (Math.abs(d) > change) change = Math.abs(d);
+    }
+    if (change < 1e-9) break;
+  }
+  const rv = x.subarray(0, n), rf = x.subarray(n);
+
+  // Lay out the vertex circles in the plane (breadth-first; a vertex's edges leave at angles set by its kites) and
+  // record each edge's touching point.
+  const turn = (u, f) => infF[f] ? Math.PI : 2 * Math.atan(rf[f] / rv[u]);
+  const cx = new Float64Array(n), cy = new Float64Array(n), base = new Float64Array(n), done = new Uint8Array(n), T = new Map();
+  let s0 = 0; while (infV[s0]) s0++;
+  done[s0] = 1; const queue = [s0];
+  while (queue.length) {
+    const u = queue.shift(), r = rot[u]; let ang = base[u];
+    for (let i = 0; i < r.length; i++) {
+      const w = r[i], k = u < w ? KEY(u, w) : KEY(w, u);
+      if (!T.has(k)) T.set(k, [cx[u] + rv[u] * Math.cos(ang), cy[u] + rv[u] * Math.sin(ang)]);
+      if (!infV[w] && !done[w]) {
+        done[w] = 1;
+        cx[w] = cx[u] + (rv[u] + rv[w]) * Math.cos(ang); cy[w] = cy[u] + (rv[u] + rv[w]) * Math.sin(ang);
+        const rw = rot[w], j = rw.indexOf(u); let bw = ang + Math.PI;
+        for (let t = 0; t < j; t++) bw -= turn(w, vF[w][t]);
+        base[w] = bw; queue.push(w);
+      }
+      ang += turn(u, vF[u][i]);
+    }
+  }
+
+  // Back to the sphere (the edge a-b touches at the projection point), then centre the touching points.
+  let sc = 0; for (const [px, py] of T.values()) sc += px * px + py * py;
+  sc = Math.sqrt(T.size / sc);
+  const keys = [...T.keys()];
+  let P = keys.map(k => { const [x0, y0] = T.get(k), px = x0 * sc, py = y0 * sc, r2 = px * px + py * py;
+    return [2 * px / (1 + r2), 2 * py / (1 + r2), (r2 - 1) / (1 + r2)]; });
+  keys.push(a < b ? KEY(a, b) : KEY(b, a)); P.push([0, 0, 1]);
+  for (let it = 0; it < 300; it++) {
+    const c = centroid(P); if (Math.hypot(...c) < 1e-12) break;
+    const m = c.map(t => t * 0.5);
+    P = P.map(p => { const y = mobius(p, m), l = Math.hypot(...y); return y.map(t => t / l); });
+  }
+  const touch = new Map(keys.map((k, i) => [k, P[i]]));
+
+  // Vertex v satisfies v . t = 1 for the touching point t of each of its edges (least squares, Cramer's rule).
+  return rot.map((r, u) => {
+    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bv = [0, 0, 0];
+    for (const w of r) { const t = touch.get(u < w ? KEY(u, w) : KEY(w, u)); for (let i = 0; i < 3; i++) { bv[i] += t[i]; for (let j = 0; j < 3; j++) A[i][j] += t[i] * t[j]; } }
+    const D = det3(A);
+    return [0, 1, 2].map(i => det3(A.map((row, ri) => row.map((val, ci) => ci === i ? bv[ri] : val))) / D);
+  });
+}
+
+function embed(P) {
+  const { F, dartFace } = traceFaces(P.rot);
+  // Drawn centred on its bounding box and scaled to fit (a lopsided canonical polyhedron would look small otherwise).
+  let pos = koebe(P.rot, F, dartFace);
+  const c = [0, 1, 2].map(j => (Math.min(...pos.map(p => p[j])) + Math.max(...pos.map(p => p[j]))) / 2);
+  pos = pos.map(p => sub(p, c));
+  const r = Math.max(...pos.map(p => Math.hypot(...p)));
+  P.pos = pos.map(p => p.map(t => t / r)); P.faces = F; P.edges = edgesOf(P.rot);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sampling
+// ---------------------------------------------------------------------------------------------------------------
+let SAMPLE = [];   // rows: { n, polys: [...] }
+let ALL = [];
+
+function faceSig(F) { const c = {}; for (const f of F) c[f.length] = (c[f.length] || 0) + 1; return c; }
+
+function sampleRow(n, per, rnd) {
+  const want = Math.min(per, COUNTS[n]), seen = new Map(), tries = COUNTS[n] <= per ? 400 : per * 30;
+  for (let t = 0; t < tries && seen.size < want; t++) {
+    const rot = randomPolyhedron(n, rnd), c = canon(rot);
+    if (!seen.has(c.key)) seen.set(c.key, { n, rot, key: c.key, aut: c.aut, E: edgesOf(rot).length });
+  }
+  const polys = [...seen.values()];
+  for (const P of polys) { embed(P); P.F = P.faces.length; P.sig = faceSig(P.faces); P.dualKey = canon(dualRot(P.rot)).key; }
+  const sigKey = P => Object.entries(P.sig).map(([k, c]) => String(c).padStart(2, "0") + k).join("");
+  polys.sort((a, b) => a.E - b.E || (sigKey(a) < sigKey(b) ? -1 : 1));
+  return polys;
+}
+
+function generate() {
+  const nmax = +document.getElementById("nmax").value, per = +document.getElementById("per").value;
+  const rnd = mulberry32((Math.random() * 2 ** 32) >>> 0);
+  const t0 = performance.now();
+  SAMPLE = [];
+  for (let n = 4; n <= nmax; n++) SAMPLE.push({ n, polys: sampleRow(n, per, rnd) });
+  ALL = SAMPLE.flatMap(r => r.polys);
+  const ms = performance.now() - t0;
+  buildScene();
+  renderRows();
+  document.getElementById("timing").textContent = `${ALL.length} polyhedra · ${Math.round(ms)} ms`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// DOM
+// ---------------------------------------------------------------------------------------------------------------
+const fmt = n => n.toLocaleString("en-US");
+const sw = k => `<i class="sw" style="background:${PAL[palIdx(k)]}"></i>`;
+
+document.getElementById("legend").innerHTML = [3, 4, 5, 6, 7, 8].map(k =>
+  `<li>${sw(k)}${k === 8 ? "8+" : k}</li>`).join("") ;
+
+let selected = null, pinned = false;
+
+function renderRows() {
+  const rows = document.getElementById("rows");
+  rows.innerHTML = SAMPLE.map(({ n, polys }) => {
+    const all = polys.length === COUNTS[n];
+    return `<section class="row" aria-label="Polyhedra with ${n} vertices">
+      <div class="row-head"><h2><i>n</i> = ${n}</h2>
+        <span class="count">${fmt(COUNTS[n])} ${COUNTS[n] === 1 ? "polyhedron" : "polyhedra"}</span>
+        <span class="span">${all ? `all ${polys.length} shown` : `${polys.length} sampled`} · ${n === 4 ? "6 edges" :
+          `by edge count, ${Math.ceil(3 * n / 2)} to ${3 * n - 6} (all faces triangles)`}</span></div>
+      <div class="cards">${polys.map(P => {
+        const i = ALL.indexOf(P);
+        const chips = Object.entries(P.sig).map(([k, c]) => `<span>${sw(+k)}${c}</span>`).join("");
+        const selfDual = P.dualKey === P.key;
+        return `<button type="button" class="card" id="c${i}" data-i="${i}" aria-label="Polyhedron with ${n} vertices, ${P.E} edges, ${P.F} faces${selfDual ? ", self-dual" : ""}">
+          <span class="tag" hidden></span><div class="view"></div>
+          <div class="cap"><span>E ${P.E} · F ${P.F}</span><span class="aut" title="Symmetries, reflections included">|Aut| ${P.aut}</span></div>
+          <div class="chips" title="Faces by number of sides">${chips}${selfDual ? '<span class="badge">self-dual</span>' : ""}</div>
+        </button>`; }).join("")}</div></section>`;
+  }).join("");
+  ALL.forEach((P, i) => { P.el = document.getElementById("c" + i); P.view = P.el.querySelector(".view"); });
+  selected = null; pinned = false; showRelations();
+}
+
+const REL = { dual: "dual", self: "self-dual", del: "edge removed", add: "edge added", con: "edge contracted", split: "vertex split" };
+
+function relationOf(S, Q) {
+  if (Q === S) return null;
+  if (Q.key === S.dualKey) return "dual";
+  if (Q.n === S.n && Q.E === S.E - 1 && relatives(S).del.has(Q.key)) return "del";
+  if (Q.n === S.n && Q.E === S.E + 1 && relatives(Q).del.has(S.key)) return "add";
+  if (Q.n === S.n - 1 && relatives(S).con.has(Q.key)) return "con";
+  if (Q.n === S.n + 1 && relatives(Q).con.has(S.key)) return "split";
+  return null;
+}
+
+function showRelations() {
+  const info = document.getElementById("info");
+  for (const P of ALL) { P.el.classList.remove("sel", "rel", "dim"); const t = P.el.querySelector(".tag"); t.hidden = true; }
+  if (!selected) {
+    info.innerHTML = "Hover a polyhedron to mark its relatives in this sample: its dual, and the ones one edge deletion or one edge contraction away. Click to pin it.";
+    return;
+  }
+  const S = selected, tally = {};
+  S.el.classList.add("sel");
+  for (const Q of ALL) {
+    if (Q === S) continue;
+    const r = relationOf(S, Q);
+    if (!r) { Q.el.classList.add("dim"); continue; }
+    tally[r] = (tally[r] || 0) + 1;
+    Q.el.classList.add("rel"); const t = Q.el.querySelector(".tag"); t.textContent = REL[r]; t.hidden = false;
+  }
+  const parts = Object.entries(tally).map(([r, c]) => `${c} ${REL[r]}`);
+  const selfDual = S.dualKey === S.key ? " It is self-dual." : "";
+  info.innerHTML = `<b>n = ${S.n}, E = ${S.E}, F = ${S.F}</b>, ${S.aut} symmetries.${selfDual} ` +
+    (parts.length ? `Relatives in this sample: ${parts.join(", ")}.` : "No relatives in this sample; try a new sample or more per row.") +
+    (pinned ? " Pinned; click it again or press Esc to release." : "");
+}
+
+const rowsEl = document.getElementById("rows");
+const pick = e => { const c = e.target.closest(".card"); return c ? ALL[+c.dataset.i] : null; };
+rowsEl.addEventListener("mouseover", e => { if (pinned) return; const P = pick(e); if (P && P !== selected) { selected = P; showRelations(); } });
+rowsEl.addEventListener("mouseleave", () => { if (!pinned && selected) { selected = null; showRelations(); } });
+rowsEl.addEventListener("focusin", e => { if (pinned) return; const P = pick(e); if (P) { selected = P; showRelations(); } });
+rowsEl.addEventListener("click", e => {
+  const P = pick(e); if (!P) return;
+  if (pinned && selected === P) { pinned = false; } else { selected = P; pinned = true; }
+  showRelations();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && selected) { pinned = false; selected = null; showRelations(); }
+  if ((e.key === "r" || e.key === "R") && !e.target.closest("select, input")) generate();
+});
+document.getElementById("regen").addEventListener("click", generate);
+document.getElementById("nmax").addEventListener("change", generate);
+document.getElementById("per").addEventListener("change", generate);
+
+// ---------------------------------------------------------------------------------------------------------------
+// WebGL: one renderer and one scene; each card's polyhedron is drawn into that card's rectangle (scissor test).
+// ---------------------------------------------------------------------------------------------------------------
+let renderer, scene, camera, faceMat, rodMat;
+const unitBall = [];
+
+function initGL() {
+  const canvas = document.getElementById("gl");
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(27, 1, 0.1, 50);
+  camera.position.set(0, 0, 5);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a93a3, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.45); sun.position.set(2, 3, 4); scene.add(sun);
+  faceMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  rodMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 50 });
+  const ico = new THREE.IcosahedronGeometry(1, 1).toNonIndexed().attributes.position.array;
+  for (let i = 0; i < ico.length; i++) unitBall.push(ico[i]);
+}
+
+const white = () => new THREE.Color(0xffffff);
+const faceColor = k => new THREE.Color(PAL[palIdx(k)]).lerp(white(), 0.28);
+const rodColor = k => new THREE.Color(PAL[palIdx(k)]).multiplyScalar(0.82);
+const ballColor = k => new THREE.Color(PAL[palIdx(k)]);
+
+function pushTri(P, N, C, a, b, c, n, col) {
+  P.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) { N.push(...n); C.push(col.r, col.g, col.b); }
+}
+
+function cylinder(P, N, C, p, q, r, col) {
+  const d = sub(q, p), L = Math.hypot(...d); if (L < 1e-9) return;
+  const dn = d.map(t => t / L), h = Math.abs(dn[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  let u = cross(dn, h); const ul = Math.hypot(...u); u = u.map(t => t / ul); const w = cross(dn, u);
+  const S = 7;
+  for (let i = 0; i < S; i++) {
+    const a0 = 2 * Math.PI * i / S, a1 = 2 * Math.PI * (i + 1) / S;
+    const n0 = [0, 1, 2].map(j => Math.cos(a0) * u[j] + Math.sin(a0) * w[j]);
+    const n1 = [0, 1, 2].map(j => Math.cos(a1) * u[j] + Math.sin(a1) * w[j]);
+    const p0 = p.map((t, j) => t + r * n0[j]), p1 = p.map((t, j) => t + r * n1[j]);
+    const q0 = q.map((t, j) => t + r * n0[j]), q1 = q.map((t, j) => t + r * n1[j]);
+    P.push(...p0, ...q0, ...q1, ...p0, ...q1, ...p1);
+    N.push(...n0, ...n0, ...n1, ...n0, ...n1, ...n1);
+    for (let k = 0; k < 6; k++) C.push(col.r, col.g, col.b);
+  }
+}
+
+function geom(P, N, C) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(C, 3));
+  return g;
+}
+
+function buildScene() {
+  for (const child of [...scene.children]) if (child.isGroup) { child.traverse(o => o.geometry && o.geometry.dispose()); scene.remove(child); }
+  ALL.forEach((Pl, idx) => {
+    const pos = Pl.pos, deg = Pl.rot.map(r => r.length), mid = centroid(pos);
+    const fP = [], fN = [], fC = [];
+    for (const f of Pl.faces) {
+      const pts = f.map(v => pos[v]), c = centroid(pts); let nr = newell(pts); if (dot(nr, sub(c, mid)) < 0) nr = nr.map(t => -t);
+      const col = faceColor(f.length);
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        if (dot(cross(sub(a, c), sub(b, c)), nr) >= 0) pushTri(fP, fN, fC, c, a, b, nr, col); else pushTri(fP, fN, fC, c, b, a, nr, col);
+      }
+    }
+    const rP = [], rN = [], rC = [], R = 0.032, B = 0.072;
+    for (const [a, b] of Pl.edges) {
+      const m = pos[a].map((t, j) => (t + pos[b][j]) / 2);
+      cylinder(rP, rN, rC, pos[a], m, R, rodColor(deg[a]));
+      cylinder(rP, rN, rC, m, pos[b], R, rodColor(deg[b]));
+    }
+    pos.forEach((p, v) => {
+      const col = ballColor(deg[v]);
+      for (let i = 0; i < unitBall.length; i += 3) {
+        const nrm = [unitBall[i], unitBall[i + 1], unitBall[i + 2]];
+        rP.push(p[0] + B * nrm[0], p[1] + B * nrm[1], p[2] + B * nrm[2]); rN.push(...nrm); rC.push(col.r, col.g, col.b);
+      }
+    });
+    const grp = new THREE.Group();
+    grp.add(new THREE.Mesh(geom(fP, fN, fC), faceMat), new THREE.Mesh(geom(rP, rN, rC), rodMat));
+    grp.visible = false;
+    grp.userData.phase = idx * 0.61;
+    scene.add(grp);
+    Pl.group = grp;
+  });
+}
+
+// Every polyhedron spins slowly about the vertical (at half speed when the system asks for reduced motion). The one
+// under the pointer stops spinning and turns its front towards the pointer (eased), then eases back and resumes.
+const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+const SPIN = 0.25, YAW = 0.9, PITCH = 0.7, EASE = 7;   // rad/s, max turn towards the pointer (rad), 1/s
+let hover = null, hx = 0, hy = 0;
+rowsEl.addEventListener("pointermove", e => {
+  const P = pick(e);
+  hover = P;
+  if (!P) return;
+  const r = P.view.getBoundingClientRect();
+  hx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / (r.width / 2)));
+  hy = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height / 2)) / (r.height / 2)));
+});
+rowsEl.addEventListener("pointerleave", () => { hover = null; });
+
+let last = 0;
+function frame(t) {
+  const dt = Math.min(0.1, last ? (t - last) / 1000 : 0); last = t;
+  const w = window.innerWidth, h = window.innerHeight, cv = renderer.domElement;
+  if (cv.width !== Math.floor(w * renderer.getPixelRatio()) || cv.height !== Math.floor(h * renderer.getPixelRatio())) renderer.setSize(w, h, false);
+  renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true);
+  const k = 1 - Math.exp(-EASE * dt);
+  for (const P of ALL) {
+    const on = P === hover;
+    if (!on) P.spin = (P.spin || 0) + SPIN * (still.matches ? 0.5 : 1) * dt;
+    P.ox = (P.ox || 0) + ((on ? hx * YAW : 0) - (P.ox || 0)) * k;
+    P.oy = (P.oy || 0) + ((on ? hy * PITCH : 0) - (P.oy || 0)) * k;
+    const r = P.view.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > h || r.right < 0 || r.left > w || r.width < 2) continue;
+    P.group.rotation.set(0.45 + P.oy, P.group.userData.phase + (P.spin || 0) + P.ox, 0, "XYZ");
+    P.group.visible = true;
+    renderer.setViewport(r.left, h - r.bottom, r.width, r.height);
+    renderer.setScissor(r.left, h - r.bottom, r.width, r.height);
+    camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    P.group.visible = false;
+  }
+  requestAnimationFrame(frame);
+}
+
+if (window.THREE) {
+  initGL();
+  generate();
+  requestAnimationFrame(frame);
+} else {
+  document.getElementById("rows").innerHTML = '<p id="err">The 3D library did not load, so the polyhedra cannot be drawn. Check the connection and reload.</p>';
+}
+</script>
+</html>
