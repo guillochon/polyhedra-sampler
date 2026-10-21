@@ -542,8 +542,9 @@ function initGL() {
   camera.position.set(0, 0, 5);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a93a3, 0.85));
   const sun = new THREE.DirectionalLight(0xffffff, 0.45); sun.position.set(2, 3, 4); scene.add(sun);
-  faceMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide,
-    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  // No polygon offset: the rods sit on the faces geometrically, and a slope-scaled offset would push faces seen
+  // edge-on so far back that rods on the far side show through them.
+  faceMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   rodMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 50 });
   const ico = new THREE.IcosahedronGeometry(1, 1).toNonIndexed().attributes.position.array;
   for (let i = 0; i < ico.length; i++) unitBall.push(ico[i]);
