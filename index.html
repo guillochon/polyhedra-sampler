@@ -587,23 +587,29 @@ function buildScene() {
   for (const child of [...scene.children]) if (child.isGroup) { child.traverse(o => o.geometry && o.geometry.dispose()); scene.remove(child); }
   ALL.forEach((Pl, idx) => {
     const pos = Pl.pos, deg = Pl.rot.map(r => r.length), mid = centroid(pos);
-    const fP = [], fN = [], fC = [];
+    const fP = [], fN = [], fC = [], dartN = new Map(), vertN = pos.map(() => [0, 0, 0]);
     for (const f of Pl.faces) {
       const pts = f.map(v => pos[v]), c = centroid(pts); let nr = newell(pts); if (dot(nr, sub(c, mid)) < 0) nr = nr.map(t => -t);
+      f.forEach((v, i) => { dartN.set(KEY(v, f[(i + 1) % f.length]), nr); for (let j = 0; j < 3; j++) vertN[v][j] += nr[j]; });
       const col = faceColor(f.length);
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
         if (dot(cross(sub(a, c), sub(b, c)), nr) >= 0) pushTri(fP, fN, fC, c, a, b, nr, col); else pushTri(fP, fN, fC, c, b, a, nr, col);
       }
     }
+    // Rods and balls are lifted off the surface: a rod moves out along the bisector of its two faces just far enough
+    // to rest on both (instead of being half buried in them), a ball along the mean normal of its faces.
     const rP = [], rN = [], rC = [], R = 0.032, B = 0.072;
+    const lift = (dir, normals, r) => { const l = Math.hypot(...dir) || 1, d = dir.map(t => t / l);
+      const s = r / Math.max(0.35, Math.min(...normals.map(n => dot(n, d)))); return d.map(t => t * s); };
     for (const [a, b] of Pl.edges) {
-      const m = pos[a].map((t, j) => (t + pos[b][j]) / 2);
-      cylinder(rP, rN, rC, pos[a], m, R, rodColor(deg[a]));
-      cylinder(rP, rN, rC, m, pos[b], R, rodColor(deg[b]));
+      const n1 = dartN.get(KEY(a, b)), n2 = dartN.get(KEY(b, a)), o = lift([0, 1, 2].map(j => n1[j] + n2[j]), [n1, n2], R);
+      const pa = pos[a].map((t, j) => t + o[j]), pb = pos[b].map((t, j) => t + o[j]), m = pa.map((t, j) => (t + pb[j]) / 2);
+      cylinder(rP, rN, rC, pa, m, R, rodColor(deg[a]));
+      cylinder(rP, rN, rC, m, pb, R, rodColor(deg[b]));
     }
-    pos.forEach((p, v) => {
-      const col = ballColor(deg[v]);
+    pos.forEach((p0, v) => {
+      const col = ballColor(deg[v]), o = lift(vertN[v], Pl.rot[v].map(w => dartN.get(KEY(v, w))), R), p = p0.map((t, j) => t + o[j]);
       for (let i = 0; i < unitBall.length; i += 3) {
         const nrm = [unitBall[i], unitBall[i + 1], unitBall[i + 2]];
         rP.push(p[0] + B * nrm[0], p[1] + B * nrm[1], p[2] + B * nrm[2]); rN.push(...nrm); rC.push(col.r, col.g, col.b);
