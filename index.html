@@ -619,17 +619,24 @@ function buildScene() {
 }
 
 // Every polyhedron spins slowly about the vertical (at half speed when the system asks for reduced motion). The one
-// under the pointer stops spinning and turns its front towards the pointer (eased), then eases back and resumes.
+// under the pointer stops spinning, grows by 66% over its neighbours and turns its front towards the pointer (all
+// eased), then eases back and resumes. It stays hovered while the pointer is anywhere over its enlarged square.
 const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-const SPIN = 0.25, YAW = Math.PI / 2, PITCH = Math.PI / 2, EASE = 7;   // rad/s, max turn towards the pointer (rad), 1/s
+const SPIN = 0.25, YAW = Math.PI / 2, PITCH = Math.PI / 2, GROW = 1.66, EASE = 7;   // rad/s, max turn (rad), scale, 1/s
 let hover = null, hx = 0, hy = 0;
+function zoomRect(P) {   // the square P is drawn in, in client pixels
+  const r = P.view.getBoundingClientRect(), s = P.sc || 1, cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  return { left: cx - r.width * s / 2, top: cy - r.height * s / 2, width: r.width * s, height: r.height * s, cx, cy };
+}
 rowsEl.addEventListener("pointermove", e => {
-  const P = pick(e);
+  let P = hover;
+  if (P) { const z = zoomRect(P); if (Math.abs(e.clientX - z.cx) > z.width / 2 || Math.abs(e.clientY - z.cy) > z.height / 2) P = null; }
+  if (!P) P = pick(e);
   hover = P;
   if (!P) return;
-  const r = P.view.getBoundingClientRect();
-  hx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / (r.width / 2)));
-  hy = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height / 2)) / (r.height / 2)));
+  const z = zoomRect(P), half = z.width / 2 * GROW / (P.sc || 1);   // full turn at the edge of the fully grown square
+  hx = Math.max(-1, Math.min(1, (e.clientX - z.cx) / half));
+  hy = Math.max(-1, Math.min(1, (e.clientY - z.cy) / half));
 });
 rowsEl.addEventListener("pointerleave", () => { hover = null; });
 
@@ -639,23 +646,33 @@ function frame(t) {
   const w = window.innerWidth, h = window.innerHeight, cv = renderer.domElement;
   if (cv.width !== Math.floor(w * renderer.getPixelRatio()) || cv.height !== Math.floor(h * renderer.getPixelRatio())) renderer.setSize(w, h, false);
   renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true);
-  const k = 1 - Math.exp(-EASE * dt);
+  const k = 1 - Math.exp(-EASE * dt), grown = [];
   for (const P of ALL) {
     const on = P === hover;
     if (!on) P.spin = (P.spin || 0) + SPIN * (still.matches ? 0.5 : 1) * dt;
     P.ox = (P.ox || 0) + ((on ? hx * YAW : 0) - (P.ox || 0)) * k;
     P.oy = (P.oy || 0) + ((on ? hy * PITCH : 0) - (P.oy || 0)) * k;
-    const r = P.view.getBoundingClientRect();
-    if (r.bottom < 0 || r.top > h || r.right < 0 || r.left > w || r.width < 2) continue;
-    P.group.rotation.set(0.45 + P.oy, P.group.userData.phase + (P.spin || 0) + P.ox, 0, "XYZ");
-    P.group.visible = true;
-    renderer.setViewport(r.left, h - r.bottom, r.width, r.height);
-    renderer.setScissor(r.left, h - r.bottom, r.width, r.height);
-    camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
-    renderer.render(scene, camera);
-    P.group.visible = false;
+    P.sc = (P.sc || 1) + ((on ? GROW : 1) - (P.sc || 1)) * k;
+    if (P.sc > 1.005) grown.push(P); else draw(P, w, h, false);
   }
+  // Enlarged ones last, largest on top, each on an opaque card-coloured square so neighbours don't show through.
+  grown.sort((a, b) => a.sc - b.sc).forEach(P => draw(P, w, h, true));
   requestAnimationFrame(frame);
+}
+
+function draw(P, w, h, backed) {
+  const r = zoomRect(P), bottom = r.top + r.height;
+  if (bottom < 0 || r.top > h || r.left + r.width < 0 || r.left > w || r.width < 2) return;
+  P.group.rotation.set(0.45 + P.oy, P.group.userData.phase + (P.spin || 0) + P.ox, 0, "XYZ");
+  P.group.visible = true;
+  renderer.setViewport(r.left, h - bottom, r.width, r.height);
+  renderer.setScissor(r.left, h - bottom, r.width, r.height);
+  // render() clears its square first: to transparent normally, to the card colour for an enlarged one.
+  if (backed) renderer.setClearColor(getComputedStyle(document.body).getPropertyValue("--surface").trim() || "#ffffff", 1);
+  camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
+  if (backed) renderer.setClearColor(0x000000, 0);
+  P.group.visible = false;
 }
 
 if (window.THREE) {
