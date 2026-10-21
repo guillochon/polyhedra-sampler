@@ -622,7 +622,7 @@ function buildScene() {
 // under the pointer stops spinning, grows by 66% over its neighbours and turns its front towards the pointer (all
 // eased), then eases back and resumes. It stays hovered while the pointer is anywhere over its enlarged square.
 const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-const SPIN = 0.25, YAW = Math.PI / 2, PITCH = Math.PI / 2, GROW = 1.66, EASE = 7;   // rad/s, max turn (rad), scale, 1/s
+const SPIN = 0.25, YAW = 0.75 * Math.PI, PITCH = 0.75 * Math.PI, GROW = 1.66, EASE = 7;   // rad/s, max turn (rad), scale, 1/s
 let hover = null, hx = 0, hy = 0;
 function zoomRect(P) {   // the square P is drawn in, in client pixels
   const r = P.view.getBoundingClientRect(), s = P.sc || 1, cx = r.left + r.width / 2, cy = r.top + r.height / 2;
