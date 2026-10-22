@@ -4,14 +4,15 @@
 
 [A000944](https://oeis.org/A000944) counts polyhedra by number of vertices: 1, 2, 7, 34, 257, 2606, 32300, … for
 n = 4, 5, 6, … By Steinitz's theorem these are the 3-connected planar graphs, up to isomorphism. The page draws a
-random sample of distinct polyhedra for every n from 4 to 40, in WebGL. A new sample takes under 100 ms; each
+random sample of distinct polyhedra for every n from 4 to 50, in WebGL. A new sample takes a fraction of a second; each
 polyhedron's shape is computed as its row scrolls into view. The OEIS lists the counts up to n = 18; those for
-n = 19 to 40 are new, computed by formula in
+n = 19 to 50 are new, computed by formula in
 [oeis-results/A000944](https://github.com/guillochon/oeis-results/tree/main/A000944).
 
 - **Triangles only.** The "Restrict faces to triangles" toggle switches to [A000109](https://oeis.org/A000109),
   the simplicial polyhedra (triangulations of the sphere): 1, 1, 2, 5, 14, 50, 233, … for n = 4, 5, 6, … The OEIS
-  lists them up to n = 24; the counts for n = 25 to 40 are new, from the same computation. Link to this view with
+  lists them up to n = 24; the counts for n = 25 to 80 are new (to 40 from the same computation, beyond that from a
+  triangulation-only count of mirror-symmetric shapes), and this view runs to n = 80. Link to this view with
   [`#triangles`](https://guillochon.github.io/polyhedra-sampler/#triangles). Relatives there are one edge flip or
   one edge contraction apart.
 - **Colours.** One scale for both: faces by number of sides, corners by degree, each half of an edge by the corner it
